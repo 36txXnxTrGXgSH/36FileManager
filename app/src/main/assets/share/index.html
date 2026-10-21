@@ -419,7 +419,8 @@ main{max-width:1180px;margin:0 auto;padding:18px}
     if (n <= 0) return "—";
     var u = ["o", "Ko", "Mo", "Go", "To"], i = 0, v = n;
     while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-    return (i === 0 ? v : v.toFixed(v < 10 ? 1 : 0)) + " " + u[i];
+    // Virgule décimale, comme l'application : « 3,8 Mo » et non « 3.8 Mo ».
+    return (i === 0 ? v : v.toFixed(v < 10 ? 1 : 0).replace(".", ",")) + " " + u[i];
   }
 
   function when(ms) {
@@ -748,6 +749,16 @@ main{max-width:1180px;margin:0 auto;padding:18px}
     var dirs = entries.length - files;
     $("count").textContent = dirs + " dossier" + (dirs > 1 ? "s" : "") +
       " · " + files + " fichier" + (files > 1 ? "s" : "");
+    // Une page de résultats compte ce qu'elle a trouvé, pas des dossiers et des fichiers.
+    // (Ce bloc avait atterri en 2.5.0 dans toggle(), où `searching` n'existe pas : chaque
+    // case cochée levait une erreur et la barre d'outils ne s'activait jamais.)
+    if (searching) {
+      var n = entries.length;
+      var txt = n + " résultat" + (n > 1 ? "s" : "");
+      if (d.truncated) txt += " — les " + n + " premiers, précisez la recherche";
+      else if (d.stopped) txt += " — recherche arrêtée après 10 s, précisez-la";
+      $("count").textContent = txt;
+    }
     refreshSel();
   }
 
@@ -760,13 +771,6 @@ main{max-width:1180px;margin:0 auto;padding:18px}
   function toggle(i, row, on) {
     if (on) sel[i] = true; else delete sel[i];
     row.classList.toggle("sel", on);
-    if (searching) {
-      var n = entries.length;
-      var txt = n + " résultat" + (n > 1 ? "s" : "");
-      if (d.truncated) txt += " — les " + n + " premiers, précisez la recherche";
-      else if (d.stopped) txt += " — recherche arrêtée après 10 s, précisez-la";
-      $("count").textContent = txt;
-    }
     refreshSel();
   }
 

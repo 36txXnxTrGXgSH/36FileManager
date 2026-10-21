@@ -5,7 +5,7 @@ stockage interne, carte SD et clé USB, coffre-fort chiffré, lecteurs réseau d
 téléphone ouvert dans le navigateur de votre PC, pour échanger des fichiers sans câble et sans
 rien installer dessus.
 
-**[⬇ Télécharger l'APK](https://github.com/36txXnxTrGXgSH/36FileManager/releases/latest)**
+**[⬇ Télécharger l'APK](https://github.com/36txXnxTrGXgSH/36FileManager/releases/latest)** · **[Page de présentation](https://36txXnxTrGXgSH.github.io/36FileManager/)**
 
 > 🔒 **Vos fichiers restent chez vous** — aucun compte, aucune publicité, aucune statistique
 > envoyée, aucun serveur de l'application. 36FileManager ne se connecte qu'aux machines que vous
@@ -18,6 +18,23 @@ rien installer dessus.
 >
 > 🤖 **Entièrement réalisée avec Claude**, l'intelligence artificielle d'Anthropic : conception,
 > code, tests et documentation.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/01-accueil.png" width="220" alt="Accueil : catégories, Téléchargements, coffre-fort et volumes"><br><sub>Accueil</sub></td>
+    <td align="center"><img src="docs/images/03-photos.png" width="220" alt="Un dossier de photos avec leurs vignettes"><br><sub>Aperçus des fichiers</sub></td>
+    <td align="center"><img src="docs/images/06-recherche.png" width="220" alt="Recherche dans les sous-dossiers"><br><sub>Recherche</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/05-actions.png" width="220" alt="Sélection multiple et menu des actions"><br><sub>Actions sur une sélection</sub></td>
+    <td align="center"><img src="docs/images/07-coffre.png" width="220" alt="Création du coffre-fort chiffré"><br><sub>Coffre-fort chiffré</sub></td>
+    <td align="center"><img src="docs/images/08-partage.png" width="220" alt="Partage réseau : adresse, QR code et code d'accès"><br><sub>Partage avec le PC</sub></td>
+  </tr>
+</table>
+
+<p align="center"><img src="docs/images/09-navigateur-pc.png" width="760" alt="La page web de 36FileManager dans le navigateur d'un PC"><br><sub>Le téléphone dans le navigateur du PC</sub></p>
+
+<sub>Les fichiers, dossiers et photos des captures sont fictifs.</sub>
 
 ## Installer
 
@@ -388,6 +405,15 @@ app/src/main/java/com/filemanager36/app/
 app/src/main/assets/share/index.html   page servie au navigateur du PC
 app/src/test/…/MultipartReaderTest.kt  tests JVM du lecteur multipart
 ```
+
+## Nouveautés de la 2.5.1
+
+- **Durée des morceaux et des vidéos** dans la fenêtre « Ce fichier existe déjà » de la page
+  web, et taille exacte quand les deux tailles s'arrondissent pareil.
+- **Corrigé** : dans la page web, cocher des fichiers active de nouveau les boutons
+  Télécharger, Déplacer, Renommer et Supprimer (défaut de la 2.5.0) ; une recherche y indique
+  de nouveau le nombre de résultats.
+- Les tailles de la page web s'écrivent avec une virgule, comme dans l'application.
 
 ## Nouveautés de la 2.5.0
 

@@ -1145,6 +1145,8 @@ rattrapé **avant** d'atteindre l'appareil :
 
 | **2.5.0** | `ChangelogTest`, repris de 36Note, échouait sans défaut de logique : ses exemples utilisaient les numéros de version de 36Note (5 à 8), absents de l'historique de 36FileManager (15 à 20). Collision de signature JVM `setSearchScope` / mutateur de `searchScope` — le piège était déjà consigné en § 10 et a été retrouvé à la compilation. Dans la page web, une recherche lente recouvrait le dossier ouvert entre-temps : jeton de navigation |
 
+| **2.5.1** | ⚠️ **La sélection de la page web ne marchait plus depuis la 2.5.0** : un correctif avait inséré le compteur de résultats de recherche dans `toggle()` au lieu de `render()` — le motif visé figurait d'abord à la fin de `toggle()`. Chaque case cochée levait `ReferenceError: searching is not defined` : ligne surlignée, mais barre d'outils jamais activée. Trouvé en préparant les captures de la page de présentation ; la 2.5.0 n'avait pas été éprouvée dans un navigateur. Leçon : **toute modification de `index.html` passe par un test navigateur, sans exception**, et un patch par motif textuel doit viser un ancrage unique |
+
 **La revue avant livraison n'est pas une formalité : elle a évité une perte totale du
 stockage de l'utilisateur, une corruption silencieuse de fichiers, et l'exposition du
 téléphone sur Internet.** La conserver dans le cycle de livraison.

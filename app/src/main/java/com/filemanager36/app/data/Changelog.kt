@@ -36,7 +36,7 @@ object Changelog {
         VersionNote(
             code = 21,
             nom = "2.5.1",
-            date = "8 octobre 2026",
+            date = "21 octobre 2026",
             lignes = listOf(
                 LigneNote(
                     GenreNote.AMELIORE,
@@ -48,6 +48,17 @@ object Changelog {
                     GenreNote.AMELIORE,
                     "Dans cette même fenêtre, quand les deux tailles s'affichent pareil (« 28 Mo » " +
                         "et « 28 Mo »), la taille exacte en octets apparaît en dessous."
+                ),
+                LigneNote(
+                    GenreNote.CORRIGE,
+                    "Partage réseau : dans la page web, cocher des fichiers active de nouveau les " +
+                        "boutons Télécharger, Déplacer, Renommer et Supprimer, et une recherche " +
+                        "indique de nouveau le nombre de résultats."
+                ),
+                LigneNote(
+                    GenreNote.AMELIORE,
+                    "Les tailles affichées dans la page web s'écrivent avec une virgule, comme dans " +
+                        "l'application (« 3,8 Mo »)."
                 )
             )
         ),
