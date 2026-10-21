@@ -1,0 +1,8 @@
+# Fins de ligne normalisées dans le dépôt ; gradlew doit rester en LF, sans quoi
+# « ./gradlew » échoue sous Linux et macOS (« bad interpreter »).
+* text=auto
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.png binary
+*.webp binary

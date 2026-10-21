@@ -1,0 +1,1493 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>36FileManager — Partage réseau</title>
+<style>
+:root{
+  --bg:#f5f7fa; --panel:#ffffff; --panel-2:#eef2f7; --line:#dde4ec;
+  --text:#182230; --muted:#66778c; --accent:#1f6feb; --accent-soft:#e7f0fe;
+  --ok:#1a7f4b; --warn:#b25e00; --danger:#c33;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 8px 24px rgba(16,24,40,.06);
+  --radius:14px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e1218; --panel:#161c25; --panel-2:#1d2531; --line:#2a3442;
+    --text:#e7ecf3; --muted:#95a3b6; --accent:#5b9bff; --accent-soft:#17263f;
+    --ok:#3ec27f; --warn:#e0a030; --danger:#f0736a;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text); min-height:100vh;
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:var(--accent)}
+
+/* ---------- En-tête ---------- */
+header{
+  position:sticky; top:0; z-index:20; background:var(--panel);
+  border-bottom:1px solid var(--line); padding:10px 18px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;letter-spacing:-.01em}
+.logo{
+  width:30px;height:30px;border-radius:9px;flex:none;
+  background:linear-gradient(135deg,var(--accent),#8b5cf6);
+  display:grid;place-items:center;color:#fff;font-size:15px
+}
+.dev{color:var(--muted);font-size:13px;font-weight:400}
+.spacer{flex:1}
+.btn{
+  border:1px solid var(--line); background:var(--panel-2); color:var(--text);
+  border-radius:10px; padding:8px 14px; font-size:14px; font-weight:550;
+  display:inline-flex; align-items:center; gap:7px; transition:.15s; white-space:nowrap;
+}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08);color:#fff}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.ghost{background:transparent}
+.btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+.iconbtn.danger:hover{border-color:var(--danger);color:var(--danger)}
+
+/* ---------- Espace disque, visible sur toutes les pages ---------- */
+#space{
+  flex:1 0 100%; display:flex; gap:10px; flex-wrap:wrap; align-items:stretch;
+  margin:2px 0 0; padding-top:9px; border-top:1px solid var(--line);
+}
+.vol{
+  border:1px solid var(--line); border-radius:11px; background:var(--panel-2);
+  padding:7px 12px; cursor:pointer; transition:.15s;
+  /* Les pastilles se partagent la largeur, sans qu'une seule s'étire sur tout
+     l'en-tête quand il n'y a qu'un volume. */
+  flex:1 1 240px; max-width:420px;
+}
+.vol:hover{border-color:var(--accent)}
+.vol.cur{border-color:var(--accent);background:var(--accent-soft)}
+.vol .vtop{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.vol .vname{font-weight:600;font-size:13.5px}
+.vol .vfree{color:var(--muted);font-size:12px;white-space:nowrap}
+.vol .vbar{height:5px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}
+.vol .vbar i{display:block;height:100%;background:var(--accent)}
+.vol.full .vbar i{background:var(--danger)}
+.vol.warn .vbar i{background:var(--warn)}
+/* Sur un téléphone, l'en-tête est collant : deux volumes en pleine taille lui
+   feraient manger le quart de l'écran. */
+@media (max-width:560px){
+  .vol{min-width:0;flex:1 1 100%;padding:5px 10px}
+  .vol .vname{font-size:13px}
+  .vol .vfree{font-size:11.5px}
+  .vol .vbar{margin-top:4px;height:4px}
+  #space{gap:6px;padding-top:7px}
+}
+
+/* ---------- Vue Stockage ---------- */
+.vcard{
+  display:flex; align-items:center; gap:16px; padding:16px 18px;
+  border-bottom:1px solid var(--line); cursor:pointer; transition:background .12s;
+}
+.vcard:last-child{border-bottom:0}
+.vcard:hover{background:var(--panel-2)}
+.vcard .vico{
+  width:46px;height:46px;border-radius:12px;flex:none;display:grid;place-items:center;
+  font-size:21px;background:var(--accent-soft)
+}
+.vcard .vmain{flex:1;min-width:0}
+.vcard b{display:block;font-size:15px;font-weight:600}
+.vcard span{color:var(--muted);font-size:12.5px}
+.vcard .vbar{height:7px;border-radius:99px;background:var(--panel-2);overflow:hidden;margin-top:8px;max-width:420px}
+.vcard .vbar i{display:block;height:100%;background:var(--accent)}
+.vcard.full .vbar i{background:var(--danger)}
+.vcard.warn .vbar i{background:var(--warn)}
+.vcard .vro{color:var(--warn);font-size:12px}
+
+/* ---------- Corps ---------- */
+main{max-width:1180px;margin:0 auto;padding:18px}
+.crumbs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:6px 0 16px;font-size:14px}
+.crumbs button{background:none;border:0;padding:4px 8px;border-radius:8px;color:var(--muted)}
+.crumbs button:hover{background:var(--panel-2);color:var(--text)}
+.crumbs button.cur{color:var(--text);font-weight:600}
+.crumbs .sep{color:var(--muted);opacity:.5}
+
+.toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.count{color:var(--muted);font-size:13px}
+
+.panel{
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden;
+}
+.row{
+  display:flex; align-items:center; gap:13px; padding:10px 14px;
+  border-bottom:1px solid var(--line); cursor:pointer; transition:background .12s;
+}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--panel-2)}
+.row.sel{background:var(--accent-soft)}
+.row input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);flex:none;cursor:pointer}
+.ico{
+  width:40px;height:40px;border-radius:10px;flex:none;display:grid;place-items:center;
+  font-size:17px;background:var(--panel-2);overflow:hidden
+}
+.ico img{width:100%;height:100%;object-fit:cover;display:block}
+.nm{flex:1;min-width:0}
+.nm b{display:block;font-weight:520;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nm span{color:var(--muted);font-size:12.5px}
+.rowact{display:flex;gap:5px;opacity:0;transition:.15s}
+.row:hover .rowact,.row.sel .rowact{opacity:1}
+@media(hover:none){.rowact{opacity:1}}
+.iconbtn{
+  border:1px solid var(--line);background:var(--panel);border-radius:9px;
+  width:34px;height:34px;display:grid;place-items:center;font-size:15px
+}
+.iconbtn:hover{border-color:var(--accent);color:var(--accent)}
+/* Plusieurs éléments cochés : seuls les boutons de la barre du haut agissent, sur la
+   sélection entière. Laisser ceux des lignes donnerait deux cibles concurrentes. */
+#list.multi .rowact .manage{display:none}
+
+.empty{padding:56px 20px;text-align:center;color:var(--muted)}
+.empty .big{font-size:40px;opacity:.35;margin-bottom:10px}
+
+/* ---------- Dépôt ---------- */
+.drop{
+  margin-top:16px;border:2px dashed var(--line);border-radius:var(--radius);
+  padding:26px;text-align:center;color:var(--muted);transition:.15s;background:var(--panel)
+}
+.drop.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.drop b{color:var(--text);display:block;margin-bottom:4px;font-size:15px}
+
+#qbar{
+  margin-top:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 14px;
+}
+#qbar .qinfo{flex:1;min-width:180px;color:var(--muted);font-size:13.5px}
+#qbar .qinfo b{color:var(--text);font-weight:600}
+#queue{margin-top:14px;display:flex;flex-direction:column;gap:9px}
+.up .rel{color:var(--muted);font-size:12px;display:block}
+.up.wait .bar i{background:var(--muted);width:0}
+.up.skip .bar i{background:var(--ok);width:100%}
+.up .retry{
+  border:1px solid var(--line);background:var(--panel-2);border-radius:9px;
+  padding:3px 10px;font-size:12.5px;margin-left:10px;white-space:nowrap;
+}
+.up .retry:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- Conflit de nom ---------- */
+/* ---------- Recherche ---------- */
+#sform{flex:1 1 220px;max-width:440px;display:flex;position:relative}
+#sq{
+  width:100%;font:inherit;font-size:14px;color:var(--text);
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:8px 34px 8px 12px;
+}
+#sq:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+#sclear{
+  position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  border:0;background:none;color:var(--muted);width:28px;height:28px;border-radius:7px;
+}
+#sclear:hover{color:var(--text);background:var(--line)}
+.nm .where{display:block;color:var(--accent);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- Choix du dossier de destination ---------- */
+#picker{
+  position:fixed;inset:0;background:rgba(8,12,18,.62);display:grid;place-items:center;
+  padding:20px;z-index:70;
+}
+#picker .card{max-width:520px;width:100%;text-align:left;padding:22px;display:flex;flex-direction:column;gap:12px}
+#picker h2{font-size:17px;margin:0;letter-spacing:-.01em;overflow-wrap:anywhere}
+#pkcrumbs{margin:0}
+#pklist{
+  display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;
+  max-height:min(46vh,380px);overflow-y:auto;background:var(--panel-2)
+}
+.pkrow{
+  display:flex;align-items:center;gap:10px;text-align:left;border:0;background:none;
+  padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px;color:var(--text)
+}
+.pkrow:last-child{border-bottom:0}
+.pkrow:hover:not(:disabled){background:var(--accent-soft)}
+.pkrow:disabled{color:var(--muted);cursor:default}
+.pkrow .pkname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pkrow .pknote{font-size:12px;color:var(--muted);white-space:nowrap}
+.pkempty{padding:18px;color:var(--muted);font-size:13.5px;text-align:center}
+.pkactions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+
+#conflict{
+  position:fixed;inset:0;background:rgba(8,12,18,.62);display:grid;place-items:center;
+  padding:20px;z-index:70;
+}
+#conflict .card{max-width:470px;text-align:left;padding:24px}
+#conflict h2{font-size:17px;margin:0 0 4px;letter-spacing:-.01em}
+#conflict .fname{
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+  word-break:break-all;color:var(--muted);margin-bottom:16px
+}
+#conflict .cmp{display:flex;gap:10px;margin-bottom:16px}
+#conflict .cmp div{
+  flex:1;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:var(--panel-2)
+}
+#conflict .cmp span{display:block;color:var(--muted);font-size:12px}
+#conflict .cmp b{font-size:14px}
+#conflict .cmp .cexact{font-size:11.5px;margin-top:1px}
+#conflict .cmp .cdur{color:var(--text);font-size:13px;margin-top:6px;font-variant-numeric:tabular-nums}
+#conflict .btn{width:100%;justify-content:center;margin-bottom:8px}
+#conflict label{
+  display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-top:12px
+}
+.up{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
+.up .top{display:flex;justify-content:space-between;gap:12px;font-size:13.5px;margin-bottom:7px}
+.up .top b{font-weight:520;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:6px;border-radius:99px;background:var(--panel-2);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.up.done .bar i{background:var(--ok)}
+.up.err .bar i{background:var(--danger);width:100%!important}
+
+/* ---------- Connexion ---------- */
+#gate{
+  position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;padding:22px;z-index:60
+}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;
+  box-shadow:var(--shadow);padding:34px 30px;width:100%;max-width:390px;text-align:center
+}
+.card .logo{width:52px;height:52px;border-radius:15px;font-size:25px;margin:0 auto 16px}
+.card h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}
+.card p{color:var(--muted);margin:0 0 22px;font-size:14px}
+#code{
+  width:100%;text-align:center;font-size:30px;letter-spacing:.42em;font-weight:600;
+  padding:14px 10px 14px 18px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel-2);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace
+}
+#code:focus{outline:2px solid var(--accent);outline-offset:1px}
+#gate .btn{width:100%;justify-content:center;margin-top:14px;padding:12px}
+#gerr{color:var(--danger);font-size:13.5px;min-height:19px;margin-top:10px}
+
+#toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:24px;z-index:80;
+  background:var(--text);color:var(--bg);padding:11px 18px;border-radius:11px;
+  font-size:14px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.25s
+}
+#toast.on{opacity:1}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="card">
+    <div class="logo">36</div>
+    <h1>36FileManager</h1>
+    <p>Saisissez le code affiché sur le téléphone.</p>
+    <input id="code" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="······">
+    <button class="btn primary" id="go">Se connecter</button>
+    <div id="gerr"></div>
+  </div>
+</div>
+
+<header class="hide" id="hdr">
+  <div class="brand">
+    <div class="logo">36</div>
+    <div>36FileManager<div class="dev" id="devname"></div></div>
+  </div>
+  <!-- La recherche prend la place de l'espaceur : elle pousse les boutons à droite
+       de la même façon, et reste visible sur toutes les pages. -->
+  <form id="sform" role="search" autocomplete="off">
+    <input id="sq" type="search" placeholder="Rechercher dans ce dossier" aria-label="Rechercher">
+    <button type="button" id="sclear" class="hide" title="Effacer la recherche">✕</button>
+  </form>
+  <button class="btn" id="newfolder">＋ Nouveau dossier</button>
+  <button class="btn" id="pick">↑ Envoyer des fichiers</button>
+  <button class="btn" id="pickdir">↑ Envoyer un dossier</button>
+  <button class="btn ghost" id="reload">⟳</button>
+  <input type="file" id="filein" multiple class="hide">
+  <!-- webkitdirectory : seul moyen d'obtenir une arborescence depuis un sélecteur.
+       Chaque fichier arrive avec son webkitRelativePath, que le téléphone recrée. -->
+  <input type="file" id="dirin" multiple webkitdirectory class="hide">
+  <div id="space" class="hide"></div>
+</header>
+
+<main class="hide" id="app">
+  <div class="crumbs" id="crumbs"></div>
+
+  <div class="toolbar" id="toolbar">
+    <button class="btn" id="selall">Tout sélectionner</button>
+    <button class="btn primary" id="dl" disabled>↓ Télécharger</button>
+    <button class="btn hide" id="mov" disabled>↪ Déplacer</button>
+    <button class="btn hide" id="ren" disabled>✎ Renommer</button>
+    <button class="btn danger hide" id="del" disabled>🗑 Supprimer</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="panel" id="list"></div>
+
+  <div class="drop" id="drop">
+    <b>Déposez vos fichiers ou vos dossiers ici</b>
+    Ils seront enregistrés dans le dossier affiché ci-dessus, arborescence comprise.
+  </div>
+
+  <div id="qbar" class="hide">
+    <span class="qinfo" id="qinfo"></span>
+    <button class="btn" id="qretry">↻ Relancer les échecs</button>
+    <button class="btn ghost" id="qclear">Effacer la liste</button>
+  </div>
+
+  <div id="queue"></div>
+</main>
+
+<div id="picker" class="hide">
+  <div class="card" role="dialog" aria-labelledby="pktitle">
+    <h2 id="pktitle">Déplacer vers…</h2>
+    <div class="crumbs" id="pkcrumbs"></div>
+    <div id="pklist"></div>
+    <div class="pkactions">
+      <button class="btn ghost" id="pkcancel">Annuler</button>
+      <button class="btn primary" id="pkok" disabled>Déplacer ici</button>
+    </div>
+  </div>
+</div>
+
+<div id="conflict" class="hide">
+  <div class="card">
+    <h2>Ce fichier existe déjà</h2>
+    <div class="fname" id="cfname"></div>
+    <div class="cmp">
+      <div>
+        <span>Sur le téléphone</span><b id="cfphone"></b>
+        <span class="cexact hide" id="cfphonex"></span>
+        <span class="cdur hide" id="cfphonedur"></span>
+      </div>
+      <div>
+        <span>Sur cet ordinateur</span><b id="cfpc"></b>
+        <span class="cexact hide" id="cfpcx"></span>
+        <span class="cdur hide" id="cfpcdur"></span>
+      </div>
+    </div>
+    <button class="btn" id="cfskip">Garder celui du téléphone</button>
+    <button class="btn" id="cfkeep">Garder les deux</button>
+    <button class="btn primary" id="cfreplace">Remplacer par celui du PC</button>
+    <label><input type="checkbox" id="cfall"> Appliquer à tous les fichiers suivants</label>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var ICON = {
+    folder: "📁", image: "🖼️", video: "🎬", audio: "🎵", pdf: "📕",
+    doc: "📄", sheet: "📊", archive: "🗜️", apk: "🤖", code: "📝", other: "📃"
+  };
+  // Types que le téléphone accepte de servir « inline ». Doit rester aligné sur
+  // HttpShareServer.isSafeToDisplay : un .html ou un .svg s'exécuterait sur l'origine
+  // du serveur et pourrait lire la session puis aspirer le stockage partagé.
+  var VIEWABLE = { image: 1, video: 1, audio: 1, pdf: 1 };
+
+  var cur = null, entries = [], sel = {}, canUpload = true, canManage = false;
+  /** « dir », « volumes » ou « search » : ce que la liste affiche en ce moment. */
+  var view = "dir";
+  /** La recherche affichée, pour la relancer après un renommage ou un déplacement. */
+  var lastSearch = null;
+  // Chaque chargement reçoit un numéro ; une réponse qui arrive après qu'on a navigué
+  // ailleurs est ignorée. Sans cela, une recherche lente de dix secondes venait
+  // recouvrir le dossier ouvert entre-temps.
+  var navSeq = 0;
+
+  // Le téléphone rappelle ses autorisations dans chaque réponse : un interrupteur
+  // basculé pendant que la page est ouverte prend effet au listage suivant, sans qu'il
+  // faille recharger la page.
+  function setCaps(upload, manage) {
+    canUpload = upload !== false;
+    // Défaut fermé côté page : une réponse ancienne ou tronquée ne doit pas faire
+    // apparaître des boutons que le serveur refusera.
+    canManage = manage === true;
+    $("mov").classList.toggle("hide", !canManage);
+    $("ren").classList.toggle("hide", !canManage);
+    $("del").classList.toggle("hide", !canManage);
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  function size(n) {
+    if (n <= 0) return "—";
+    var u = ["o", "Ko", "Mo", "Go", "To"], i = 0, v = n;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? v : v.toFixed(v < 10 ? 1 : 0)) + " " + u[i];
+  }
+
+  function when(ms) {
+    if (!ms) return "";
+    var d = new Date(ms);
+    return d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR",
+      { hour: "2-digit", minute: "2-digit" });
+  }
+
+  var toastTimer;
+  function toast(msg) {
+    var t = $("toast");
+    t.textContent = msg; t.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove("on"); }, 2600);
+  }
+
+  function api(url, opts) {
+    return fetch(url, opts || {}).then(function (r) {
+      if (r.status === 401) { showGate(); throw new Error("Session expirée"); }
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ("Erreur " + r.status));
+        return j;
+      });
+    });
+  }
+
+  // Écriture sur le téléphone. L'en-tête « X-Fm36 » n'est pas décoratif : le
+  // téléphone l'exige sur le renommage et la suppression, les deux seules opérations
+  // irréversibles. Un site tiers ne peut pas le poser sans une autorisation préalable
+  // que le serveur ne donne jamais.
+  function post(url, body) {
+    return api(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Fm36": "1" },
+      body: body
+    });
+  }
+
+  // ---------- Connexion ----------
+
+  function showGate() {
+    $("gate").classList.remove("hide");
+    // L'espace disque vit hors de « main » : sans cela il resterait affiché derrière
+    // l'écran de code quand une session expire.
+    $("space").classList.add("hide");
+    setTimeout(function(){ $("code").focus(); }, 50);
+  }
+  function showApp() {
+    $("gate").classList.add("hide");
+    $("hdr").classList.remove("hide");
+    $("app").classList.remove("hide");
+  }
+
+  function login() {
+    var v = $("code").value.replace(/\D/g, "");
+    $("gerr").textContent = "";
+    fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "code=" + encodeURIComponent(v)
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.ok) { showApp(); load(null); }
+      else { $("gerr").textContent = "Code incorrect."; $("code").value = ""; $("code").focus(); }
+    }).catch(function () { $("gerr").textContent = "Téléphone injoignable."; });
+  }
+
+  $("go").onclick = login;
+  $("code").onkeydown = function (e) { if (e.key === "Enter") login(); };
+
+  // ---------- Listing ----------
+
+  function load(path) {
+    var my = ++navSeq;
+    var url = "/api/list" + (path ? "?path=" + encodeURIComponent(path) : "");
+    api(url).then(function (d) { if (my === navSeq) render(d); })
+      .catch(function (e) { if (my === navSeq) toast(e.message); });
+  }
+
+  // Cherche dans le dossier affiché et tous ses sous-dossiers ; depuis la vue Stockage,
+  // dans tous les volumes. Même moteur que l'application : les mêmes fichiers sont
+  // trouvés pour la même saisie, accents et majuscules ignorés.
+  function runSearch(q, scope) {
+    q = (q || "").trim();
+    if (!q) return;
+    var my = ++navSeq;
+    lastSearch = { q: q, path: scope || null };
+    $("count").textContent = "Recherche en cours…";
+    var url = "/api/search?q=" + encodeURIComponent(q) + (scope ? "&path=" + encodeURIComponent(scope) : "");
+    api(url).then(function (d) { if (my === navSeq) render(d); })
+      .catch(function (e) { if (my === navSeq) toast(e.message); });
+  }
+
+  /** Recharge ce qui est affiché : le dossier, ou la recherche en cours. */
+  function refresh() {
+    if (view === "search" && lastSearch) runSearch(lastSearch.q, lastSearch.path);
+    else load(cur);
+  }
+
+  $("sform").onsubmit = function (e) {
+    e.preventDefault();
+    // Depuis une recherche, une nouvelle saisie cherche au même endroit que la
+    // précédente, pas dans le dossier du premier résultat.
+    var scope = view === "search" && lastSearch ? lastSearch.path : cur;
+    runSearch($("sq").value, scope);
+  };
+  $("sq").oninput = function () {
+    $("sclear").classList.toggle("hide", !this.value);
+  };
+  $("sq").onkeydown = function (e) {
+    if (e.key === "Escape") { e.preventDefault(); leaveSearch(); }
+  };
+  $("sclear").onclick = function () { leaveSearch(); };
+
+  function leaveSearch() {
+    $("sq").value = "";
+    $("sclear").classList.add("hide");
+    if (view === "search") load(lastSearch ? lastSearch.path : cur);
+  }
+
+  // L'espace disque est réaffiché à chaque réponse du téléphone : il est donc juste
+  // sur toutes les pages, sans requête supplémentaire ni valeur qui vieillit.
+  function renderSpace(vols, current) {
+    var bar = $("space");
+    bar.innerHTML = "";
+    bar.classList.toggle("hide", !vols.length);
+    vols.forEach(function (v) {
+      var pct = v.total > 0 ? Math.round(v.used / v.total * 100) : 0;
+      var el = document.createElement("div");
+      el.className = "vol" + (v.path === current ? " cur" : "") +
+        (pct >= 95 ? " full" : pct >= 85 ? " warn" : "");
+      el.title = "Ouvrir " + v.label;
+      var top = document.createElement("div"); top.className = "vtop";
+      var nm = document.createElement("span"); nm.className = "vname"; nm.textContent = v.label;
+      var fr = document.createElement("span"); fr.className = "vfree";
+      fr.textContent = v.total > 0
+        ? size(v.free) + " libres sur " + size(v.total)
+        : "espace inconnu";
+      top.appendChild(nm); top.appendChild(fr);
+      el.appendChild(top);
+      var b = document.createElement("div"); b.className = "vbar";
+      var i = document.createElement("i"); i.style.width = pct + "%";
+      b.appendChild(i); el.appendChild(b);
+      el.onclick = function () { load(v.path); };
+      bar.appendChild(el);
+    });
+  }
+
+  // Vue Stockage : la liste des volumes partagés. Elle remplace l'arrivée directe dans
+  // le stockage interne dès qu'il y a une carte SD ou une clé USB.
+  function renderVolumes(d) {
+    cur = null; entries = []; sel = {};
+    setDirMode(false);
+    var list = $("list"); list.innerHTML = "";
+    var vols = d.volumes || [];
+    if (!vols.length) {
+      list.innerHTML = '<div class="empty"><div class="big">💾</div>Aucun volume accessible.</div>';
+    }
+    vols.forEach(function (v) {
+      var pct = v.total > 0 ? Math.round(v.used / v.total * 100) : 0;
+      var card = document.createElement("div");
+      card.className = "vcard" + (pct >= 95 ? " full" : pct >= 85 ? " warn" : "");
+      var ico = document.createElement("div"); ico.className = "vico";
+      ico.textContent = v.usb ? "🔌" : v.removable ? "💳" : "📱";
+      card.appendChild(ico);
+      var main = document.createElement("div"); main.className = "vmain";
+      var b = document.createElement("b"); b.textContent = v.label; main.appendChild(b);
+      var sp = document.createElement("span");
+      sp.textContent = v.total > 0
+        ? size(v.free) + " libres sur " + size(v.total) + " · " + size(v.used) + " utilisés"
+        : "Espace inconnu";
+      main.appendChild(sp);
+      if (!v.writable) {
+        var ro = document.createElement("div"); ro.className = "vro";
+        ro.textContent = "Lecture seule";
+        main.appendChild(ro);
+      }
+      var bar = document.createElement("div"); bar.className = "vbar";
+      var fill = document.createElement("i"); fill.style.width = pct + "%";
+      bar.appendChild(fill); main.appendChild(bar);
+      card.appendChild(main);
+      card.onclick = function () { load(v.path); };
+      list.appendChild(card);
+    });
+    $("count").textContent = vols.length + " volume" + (vols.length > 1 ? "s" : "");
+    crumbs(d);
+  }
+
+  // Dans la vue Stockage, il n'y a pas de dossier courant : tout ce qui écrit ou
+  // sélectionne dans un dossier n'aurait pas de cible.
+  // Une page de résultats garde la barre d'outils — on agit sur ce qu'on a trouvé —
+  // mais pas le dépôt : les résultats viennent de plusieurs dossiers, et « déposer
+  // ici » n'y désignerait rien de clair.
+  function setDirMode(on, noUpload) {
+    var up = on && !noUpload && canUpload;
+    $("toolbar").classList.toggle("hide", !on);
+    $("drop").classList.toggle("hide", !up);
+    $("pick").classList.toggle("hide", !up);
+    $("pickdir").classList.toggle("hide", !up);
+    $("newfolder").classList.toggle("hide", !up);
+    $("sq").placeholder = on ? "Rechercher dans ce dossier" : "Rechercher partout";
+  }
+
+  function crumbs(d) {
+    var cr = $("crumbs"); cr.innerHTML = "";
+    (d.crumbs || []).forEach(function (c, i) {
+      if (i) { var s = document.createElement("span"); s.className = "sep"; s.textContent = "/"; cr.appendChild(s); }
+      var b = document.createElement("button");
+      b.textContent = c.name;
+      if (i === d.crumbs.length - 1) b.className = "cur";
+      b.onclick = function () {
+        if (c.search) runSearch(lastSearch.q, lastSearch.path); else load(c.path);
+      };
+      cr.appendChild(b);
+    });
+  }
+
+  function render(d) {
+    if (typeof d.manage === "boolean") setCaps(d.upload, d.manage);
+    renderSpace(d.volumes || [], d.volume);
+    var searching = d.view === "search";
+    if (!searching && view === "search") {
+      // On quitte une recherche : le champ se vide, sinon il annoncerait une
+      // recherche qui n'est plus affichée.
+      $("sq").value = "";
+      $("sclear").classList.add("hide");
+    }
+    view = searching ? "search" : d.view === "volumes" ? "volumes" : "dir";
+    if (d.view === "volumes") return renderVolumes(d);
+
+    cur = d.path || null; entries = d.entries || []; sel = {};
+    setDirMode(true, searching);
+    if (searching) {
+      d.crumbs = (d.crumbs || []).concat([{ name: "Résultats pour « " + d.q + " »", search: true }]);
+      $("sq").value = d.q;
+      $("sclear").classList.remove("hide");
+    }
+    crumbs(d);
+
+    var list = $("list"); list.innerHTML = "";
+    if (!entries.length) {
+      list.innerHTML = searching
+        ? '<div class="empty"><div class="big">🔍</div></div>'
+        : '<div class="empty"><div class="big">🗂️</div>Ce dossier est vide.</div>';
+      if (searching) {
+        var msg = document.createElement("div");
+        msg.textContent = "Aucun résultat pour « " + d.q + " ».";
+        list.firstChild.appendChild(msg);
+      }
+    }
+    entries.forEach(function (f, i) {
+      var row = document.createElement("div");
+      row.className = "row"; row.dataset.i = i;
+
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.onclick = function (ev) { ev.stopPropagation(); toggle(i, row, cb.checked); };
+      row.appendChild(cb);
+
+      var ico = document.createElement("div"); ico.className = "ico";
+      if (f.kind === "image") {
+        var im = document.createElement("img");
+        im.loading = "lazy";
+        im.src = "/api/thumb?path=" + encodeURIComponent(f.path);
+        im.onerror = function () { ico.textContent = ICON.image; };
+        ico.appendChild(im);
+      } else {
+        ico.textContent = f.dir ? ICON.folder : (ICON[f.kind] || ICON.other);
+      }
+      row.appendChild(ico);
+
+      var nm = document.createElement("div"); nm.className = "nm";
+      var b = document.createElement("b"); b.textContent = f.name; nm.appendChild(b);
+      var sp = document.createElement("span");
+      sp.textContent = (f.dir ? "Dossier" : size(f.size)) + " · " + when(f.mtime);
+      nm.appendChild(sp);
+      if (f.where) {
+        var wh = document.createElement("span");
+        wh.className = "where";
+        wh.textContent = f.where;
+        nm.appendChild(wh);
+      }
+      row.appendChild(nm);
+
+      var act = document.createElement("div"); act.className = "rowact";
+      // « Ouvrir dans le navigateur » n'est proposé que pour ce que le navigateur sait
+      // afficher sans exécuter de code. Le téléphone applique la même règle de son côté
+      // et force le téléchargement pour tout le reste : proposer le bouton partout
+      // donnait un aperçu qui se transformait en téléchargement sans explication.
+      if (!f.dir && VIEWABLE[f.kind]) {
+        act.appendChild(mkBtn("👁", "Ouvrir dans le navigateur", function (ev) {
+          ev.stopPropagation();
+          window.open("/api/file?inline=1&path=" + encodeURIComponent(f.path), "_blank");
+        }));
+      }
+      act.appendChild(mkBtn("↓", f.dir ? "Télécharger en ZIP" : "Télécharger", function (ev) {
+        ev.stopPropagation(); grab(f);
+      }));
+      if (canManage) {
+        var mv = mkBtn("↪", "Déplacer", function (ev) {
+          ev.stopPropagation(); openPicker([f]);
+        });
+        mv.className = "iconbtn manage";
+        act.appendChild(mv);
+        var rn = mkBtn("✎", "Renommer", function (ev) {
+          ev.stopPropagation(); renameAll([f]);
+        });
+        rn.className = "iconbtn manage";
+        act.appendChild(rn);
+        var rm = mkBtn("🗑", "Supprimer", function (ev) {
+          ev.stopPropagation(); removeAll([f]);
+        });
+        rm.className = "iconbtn danger manage";
+        act.appendChild(rm);
+      }
+      row.appendChild(act);
+
+      row.onclick = function () {
+        if (f.dir) load(f.path);
+        else { cb.checked = !cb.checked; toggle(i, row, cb.checked); }
+      };
+      list.appendChild(row);
+    });
+
+    var files = entries.filter(function (f) { return !f.dir; }).length;
+    var dirs = entries.length - files;
+    $("count").textContent = dirs + " dossier" + (dirs > 1 ? "s" : "") +
+      " · " + files + " fichier" + (files > 1 ? "s" : "");
+    refreshSel();
+  }
+
+  function mkBtn(txt, title, fn) {
+    var b = document.createElement("button");
+    b.className = "iconbtn"; b.textContent = txt; b.title = title; b.onclick = fn;
+    return b;
+  }
+
+  function toggle(i, row, on) {
+    if (on) sel[i] = true; else delete sel[i];
+    row.classList.toggle("sel", on);
+    if (searching) {
+      var n = entries.length;
+      var txt = n + " résultat" + (n > 1 ? "s" : "");
+      if (d.truncated) txt += " — les " + n + " premiers, précisez la recherche";
+      else if (d.stopped) txt += " — recherche arrêtée après 10 s, précisez-la";
+      $("count").textContent = txt;
+    }
+    refreshSel();
+  }
+
+  function refreshSel() {
+    var n = Object.keys(sel).length;
+    $("dl").disabled = n === 0;
+    $("dl").textContent = n ? "↓ Télécharger (" + n + ")" : "↓ Télécharger";
+    $("del").disabled = n === 0;
+    $("del").textContent = n ? "🗑 Supprimer (" + n + ")" : "🗑 Supprimer";
+    $("ren").disabled = n === 0;
+    $("ren").textContent = n ? "✎ Renommer (" + n + ")" : "✎ Renommer";
+    $("mov").disabled = n === 0;
+    $("mov").textContent = n ? "↪ Déplacer (" + n + ")" : "↪ Déplacer";
+    $("list").classList.toggle("multi", n > 1);
+  }
+
+  $("selall").onclick = function () {
+    var rows = $("list").querySelectorAll(".row");
+    var all = Object.keys(sel).length === entries.length && entries.length > 0;
+    sel = {};
+    rows.forEach(function (row, i) {
+      var cb = row.querySelector("input");
+      cb.checked = !all;
+      row.classList.toggle("sel", !all);
+      if (!all) sel[i] = true;
+    });
+    refreshSel();
+  };
+
+  // ---------- Téléchargement ----------
+
+  function grab(f) {
+    var url = f.dir
+      ? "/api/zip?path=" + encodeURIComponent(f.path)
+      : "/api/file?path=" + encodeURIComponent(f.path);
+    var a = document.createElement("a");
+    a.href = url; a.download = f.name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { document.body.removeChild(a); }, 1500);
+  }
+
+  $("dl").onclick = function () {
+    var picked = Object.keys(sel).map(function (i) { return entries[i]; });
+    // Un déclenchement par fichier, espacé : lancés d'un coup, Edge et Firefox
+    // n'en retiennent qu'un ou deux.
+    picked.forEach(function (f, i) { setTimeout(function () { grab(f); }, i * 550); });
+    toast(picked.length + " téléchargement" + (picked.length > 1 ? "s" : "") + " lancé" +
+      (picked.length > 1 ? "s" : ""));
+  };
+
+  // ---------- Renommer et supprimer ----------
+
+  // Un seul élément : une invite, comme avant. Plusieurs : les invites s'enchaînent,
+  // chacune montrant le nom actuel et le rang dans la sélection. « Annuler » arrête la
+  // série sans défaire ce qui a déjà été renommé — l'inverse serait un mensonge, les
+  // renommages sont déjà écrits sur le téléphone.
+  function renameAll(items) {
+    if (!items.length) return;
+    var i = 0, done = 0, last = "";
+
+    function finish() {
+      if (done === 1) toast("Renommé en « " + last + " »");
+      else if (done > 1) toast(done + " éléments renommés");
+      refresh();
+    }
+
+    function step() {
+      if (i >= items.length) return finish();
+      var f = items[i++];
+      var title = items.length > 1
+        ? "Nouveau nom (" + i + "/" + items.length + ") :"
+        : "Nouveau nom :";
+      var name = prompt(title, f.name);
+      if (name === null) return finish();
+      name = name.trim();
+      // Nom vide ou inchangé : on passe au suivant. `setTimeout` plutôt qu'un appel
+      // direct — enchaîner cent invites ignorées empilerait cent appels.
+      if (!name || name === f.name) return setTimeout(step, 0);
+      post("/api/rename", "path=" + encodeURIComponent(f.path) + "&name=" + encodeURIComponent(name))
+        .then(function (j) { done++; last = j.name || name; step(); })
+        .catch(function (e) { toast(e.message); finish(); });
+    }
+    step();
+  }
+
+  function removeAll(items) {
+    if (!items.length) return;
+    var what = items.length === 1
+      ? "« " + items[0].name + " »"
+      : items.length + " éléments";
+    var dirs = items.filter(function (f) { return f.dir; }).length;
+    var warn = dirs ? "\n\nUn dossier est supprimé avec tout son contenu." : "";
+    if (!confirm("Supprimer définitivement " + what + " ?" +
+      "\n\nIl n'y a pas de corbeille : la suppression est immédiate et sans retour." +
+      warn)) return;
+    // Le téléphone accepte plusieurs « path » par requête, mais refuse un corps trop
+    // long : on envoie par paquets de cent, l'un après l'autre, et on additionne.
+    var batches = [], i;
+    for (i = 0; i < items.length; i += 100) batches.push(items.slice(i, i + 100));
+    var done = 0, failed = 0;
+
+    function next() {
+      var batch = batches.shift();
+      if (!batch) {
+        toast(done + " élément" + (done > 1 ? "s supprimés" : " supprimé") +
+          (failed ? " · " + failed + " en échec" : ""));
+        refresh();
+        return;
+      }
+      var body = batch.map(function (f) { return "path=" + encodeURIComponent(f.path); }).join("&");
+      post("/api/delete", body).then(function (j) {
+        done += j.deleted || 0;
+        failed += j.failed || 0;
+        next();
+      }).catch(function (e) { toast(e.message); refresh(); });
+    }
+    next();
+  }
+
+  $("del").onclick = function () {
+    removeAll(Object.keys(sel).map(function (i) { return entries[i]; }));
+  };
+
+  // ---------- Déplacer ----------
+
+  var pk = { items: [], path: null };
+
+  function parentOf(path) {
+    var i = path.lastIndexOf("/");
+    return i > 0 ? path.slice(0, i) : path;
+  }
+
+  /** Vrai si [path] est l'un des dossiers déplacés, ou se trouve à l'intérieur. */
+  function insideMoved(path) {
+    return pk.items.some(function (it) {
+      return it.dir && (path === it.path || path.indexOf(it.path + "/") === 0);
+    });
+  }
+
+  function openPicker(items) {
+    if (!items.length) return;
+    pk.items = items;
+    $("pktitle").textContent = "Déplacer " +
+      (items.length === 1 ? "« " + items[0].name + " »" : items.length + " éléments") + " vers…";
+    $("picker").classList.remove("hide");
+    // Départ : le dossier affiché. Depuis une recherche, celui du premier élément —
+    // il n'y a pas d'autre dossier « courant » qui ait un sens.
+    pickerLoad(view === "search" ? parentOf(items[0].path) : cur);
+  }
+
+  function closePicker() {
+    $("picker").classList.add("hide");
+    pk.items = [];
+  }
+
+  function pickerLoad(path) {
+    var url = "/api/list" + (path ? "?path=" + encodeURIComponent(path) : "");
+    api(url).then(pickerRender).catch(function (e) { toast(e.message); });
+  }
+
+  function pickerRender(d) {
+    pk.path = d.view === "volumes" ? null : d.path;
+
+    var cr = $("pkcrumbs"); cr.innerHTML = "";
+    (d.crumbs || []).forEach(function (c, i) {
+      if (i) { var sp = document.createElement("span"); sp.className = "sep"; sp.textContent = "/"; cr.appendChild(sp); }
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = c.name;
+      if (i === d.crumbs.length - 1) b.className = "cur";
+      b.onclick = function () { pickerLoad(c.path); };
+      cr.appendChild(b);
+    });
+
+    var rows = d.view === "volumes"
+      ? (d.volumes || []).map(function (v) { return { name: v.label, path: v.path, vol: true }; })
+      : (d.entries || []).filter(function (f) { return f.dir; });
+
+    var list = $("pklist"); list.innerHTML = "";
+    if (!rows.length) {
+      list.innerHTML = '<div class="pkempty">Aucun sous-dossier ici.</div>';
+    }
+    rows.forEach(function (r) {
+      var moving = insideMoved(r.path);
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "pkrow";
+      b.disabled = moving;
+      var ic = document.createElement("span"); ic.textContent = r.vol ? "💾" : "📁";
+      var nm = document.createElement("span"); nm.className = "pkname"; nm.textContent = r.name;
+      b.appendChild(ic); b.appendChild(nm);
+      if (moving) {
+        var note = document.createElement("span"); note.className = "pknote";
+        note.textContent = "déplacé";
+        b.appendChild(note);
+      }
+      b.onclick = function () { pickerLoad(r.path); };
+      list.appendChild(b);
+    });
+
+    // « Déplacer ici » dit pourquoi il est grisé : un bouton muet laisse chercher ce
+    // qui ne va pas.
+    var reason = "";
+    if (!pk.path) reason = "Choisissez un dossier";
+    else if (insideMoved(pk.path)) reason = "Un dossier ne peut pas entrer en lui-même";
+    else if (pk.items.every(function (it) { return parentOf(it.path) === pk.path; })) reason = "Déjà dans ce dossier";
+    $("pkok").disabled = !!reason;
+    $("pkok").textContent = reason || "Déplacer ici";
+  }
+
+  $("pkcancel").onclick = closePicker;
+  $("picker").onclick = function (e) { if (e.target === this) closePicker(); };
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !$("picker").classList.contains("hide")) closePicker();
+  });
+
+  $("pkok").onclick = function () {
+    var dest = pk.path, items = pk.items.slice();
+    if (!dest || !items.length) return;
+    closePicker();
+    toast("Déplacement en cours…");
+    // Par paquets de cent, comme la suppression : le téléphone refuse un corps trop long.
+    var batches = [], i;
+    for (i = 0; i < items.length; i += 100) batches.push(items.slice(i, i + 100));
+    var moved = 0, renamed = 0, failed = 0, firstError = "";
+
+    function next() {
+      var batch = batches.shift();
+      if (!batch) {
+        var msg = moved + " élément" + (moved > 1 ? "s déplacés" : " déplacé");
+        if (renamed) msg += " · " + renamed + " renommé" + (renamed > 1 ? "s" : "") + " pour ne rien écraser";
+        if (failed) msg += " · " + failed + " en échec" + (firstError ? " : " + firstError : "");
+        toast(msg);
+        refresh();
+        return;
+      }
+      var body = "dest=" + encodeURIComponent(dest) + "&" +
+        batch.map(function (f) { return "path=" + encodeURIComponent(f.path); }).join("&");
+      post("/api/move", body).then(function (j) {
+        moved += j.moved || 0;
+        renamed += j.renamed || 0;
+        failed += j.failed || 0;
+        if (!firstError && j.errors && j.errors.length) firstError = j.errors[0];
+        next();
+      }).catch(function (e) { toast(e.message); refresh(); });
+    }
+    next();
+  };
+
+  $("mov").onclick = function () {
+    openPicker(Object.keys(sel).map(function (i) { return entries[i]; }));
+  };
+
+  $("ren").onclick = function () {
+    renameAll(Object.keys(sel).map(function (i) { return entries[i]; }));
+  };
+
+  $("reload").onclick = function () { refresh(); };
+
+  $("newfolder").onclick = function () {
+    var name = prompt("Nom du nouveau dossier :");
+    if (!name) return;
+    post("/api/mkdir", "path=" + encodeURIComponent(cur) + "&name=" + encodeURIComponent(name))
+      .then(function () { toast("Dossier créé"); load(cur); })
+      .catch(function (e) { toast(e.message); });
+  };
+
+  // ---------- Envoi vers le téléphone ----------
+  //
+  // Tout passe par une file : chaque fichier y entre à l'état « attente », et deux
+  // envois au plus avancent à la fois. La version précédente lançait toutes les
+  // requêtes d'un coup — le navigateur n'en ouvre que six, si bien que le reste
+  // restait affiché « 0 % » sans que rien ne soit cassé : ni progression, ni erreur,
+  // ni explication.
+
+  var queue = [], activeUploads = 0, seq = 0;
+  /** Réponse « appliquer à tous » retenue pour les conflits suivants. */
+  var conflictAll = null;
+  var conflictOpen = false;
+  /** Numéro de la boîte de conflit affichée : une mesure de durée tardive ne s'écrit
+   *  pas dans la boîte du fichier suivant. */
+  var conflictSeq = 0;
+
+  function octets(n) {
+    return n.toLocaleString("fr-FR") + " octets";
+  }
+
+  /** 3:42, ou 1:02:05 au-delà d'une heure ; « inconnue » si la mesure a échoué. */
+  function fmtDuration(ms) {
+    if (!(ms > 0)) return "inconnue";
+    var s = Math.round(ms / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    function two(n) { return (n < 10 ? "0" : "") + n; }
+    return h ? h + ":" + two(m) + ":" + two(r) : m + ":" + two(r);
+  }
+
+  /**
+   * Durée d'un fichier de l'ordinateur, sans l'envoyer : un lecteur invisible n'en lit
+   * que l'en-tête. Un élément vidéo, même pour la musique — il lit les deux, et le type
+   * annoncé par le système est souvent vide pour un .flac.
+   *
+   * Un format que le navigateur ne sait pas décoder (certains .mkv, .avi) rend
+   * « inconnue » plutôt que de laisser la boîte en attente : délai de six secondes.
+   */
+  function localDuration(file, done) {
+    var el = document.createElement("video");
+    var url = URL.createObjectURL(file);
+    var over = false;
+    var timer = setTimeout(function () { finish(-1); }, 6000);
+    function finish(ms) {
+      if (over) return;
+      over = true;
+      clearTimeout(timer);
+      el.removeAttribute("src");
+      URL.revokeObjectURL(url);
+      done(ms);
+    }
+    el.preload = "metadata";
+    el.muted = true;
+    el.onloadedmetadata = function () {
+      var d = el.duration;
+      finish(isFinite(d) && d > 0 ? Math.round(d * 1000) : -1);
+    };
+    el.onerror = function () { finish(-1); };
+    el.src = url;
+  }
+  /** Deux envois de front : au-delà, ils se partagent la bande passante sans rien gagner. */
+  var MAX_ACTIVE = 2;
+
+  function enc(v) { return encodeURIComponent(v); }
+
+  // Le dossier est figé à l'entrée dans la file : l'utilisateur peut naviguer ailleurs
+  // pendant l'envoi, les fichiers doivent arriver là où il les a déposés.
+  function enqueue(items) {
+    if (!canUpload) { toast("L'envoi est désactivé sur le téléphone."); return; }
+    if (!cur) { toast("Ouvrez d'abord un dossier."); return; }
+    if (!items.length) { toast("Aucun fichier à envoyer."); return; }
+    var dir = cur;
+    items.forEach(function (it) {
+      var q = {
+        id: ++seq, file: it.file, rel: it.rel, dir: dir,
+        state: "attente", mode: "", sent: 0, msg: "En attente"
+      };
+      q.box = makeBox(q);
+      queue.push(q);
+      $("queue").insertBefore(q.box, $("queue").firstChild);
+    });
+    pump();
+  }
+
+  function makeBox(q) {
+    var box = document.createElement("div");
+    box.className = "up wait";
+    box.innerHTML = '<div class="top"><b></b><span class="st"></span></div><div class="bar"><i></i></div>';
+    var name = box.querySelector("b");
+    name.textContent = q.file.name;
+    // Le chemin n'est rappelé que s'il y en a un : sinon il répéterait le nom.
+    if (q.rel && q.rel !== q.file.name) {
+      var rel = document.createElement("span");
+      rel.className = "rel";
+      rel.textContent = q.rel;
+      name.appendChild(rel);
+    }
+    var retry = document.createElement("button");
+    retry.className = "retry hide";
+    retry.textContent = "↻ Relancer";
+    retry.onclick = function () { relaunch(q); };
+    box.querySelector(".top").appendChild(retry);
+    // « .st » et non « .top span » : le chemin relatif est lui aussi un span, placé
+    // plus haut dans l'ordre du document, et c'est lui qui recevait le pourcentage.
+    q.pct = box.querySelector(".st");
+    q.bar = box.querySelector("i");
+    q.retry = retry;
+    return box;
+  }
+
+  function paint(q) {
+    q.box.className = "up" + (
+      q.state === "fini" ? " done" :
+      q.state === "ignore" ? " skip" :
+      q.state === "echec" ? " err" :
+      q.state === "attente" || q.state === "conflit" ? " wait" : ""
+    );
+    q.pct.textContent = q.msg;
+    q.retry.classList.toggle("hide", q.state !== "echec");
+    updateBar();
+  }
+
+  function updateBar() {
+    var waiting = 0, running = 0, failed = 0, done = 0;
+    queue.forEach(function (q) {
+      if (q.state === "attente" || q.state === "conflit") waiting++;
+      else if (q.state === "envoi" || q.state === "verif") running++;
+      else if (q.state === "echec") failed++;
+      else done++;
+    });
+    $("qbar").classList.toggle("hide", queue.length === 0);
+    var parts = [];
+    if (running) parts.push("<b>" + running + "</b> en cours");
+    if (waiting) parts.push("<b>" + waiting + "</b> en attente");
+    if (failed) parts.push("<b>" + failed + "</b> en échec");
+    if (done) parts.push("<b>" + done + "</b> terminé" + (done > 1 ? "s" : ""));
+    $("qinfo").innerHTML = parts.join(" · ") || "File vide";
+    $("qretry").classList.toggle("hide", failed === 0);
+  }
+
+  function release(q) {
+    activeUploads--;
+    pump();
+  }
+
+  // Deux états peuvent avancer : « attente » passe d'abord par la vérification des
+  // doublons, « pret » a déjà sa réponse et part directement. Sans cette distinction,
+  // un fichier décidé retournait à la vérification, qui le redéclarait en conflit :
+  // avec « appliquer à tous », la file tournait en rond indéfiniment.
+  function pump() {
+    while (activeUploads < MAX_ACTIVE) {
+      var next = null;
+      for (var i = 0; i < queue.length; i++) {
+        if (queue[i].state === "attente" || queue[i].state === "pret") { next = queue[i]; break; }
+      }
+      if (!next) break;
+      activeUploads++;
+      if (next.state === "pret") upload(next); else check(next);
+    }
+    askNextConflict();
+    updateBar();
+  }
+
+  // ---------- Doublons ----------
+
+  // On demande au téléphone avant d'envoyer : renvoyer deux gigaoctets pour découvrir
+  // ensuite qu'ils y étaient déjà n'aurait aucun sens.
+  function check(q) {
+    q.state = "verif"; q.msg = "Vérification…"; paint(q);
+    post("/api/precheck", "path=" + enc(q.dir) + "&rel=" + enc(q.rel) + "&size=" + q.file.size)
+      .then(function (r) {
+        if (r.state === "absent") return upload(q);
+        if (r.state === "same") {
+          // Même nom, même taille : demandé par l'utilisateur, on ne remplace pas et on
+          // ne fabrique pas un doublon numéroté non plus.
+          skipped(q, "Déjà présent, identique · ignoré");
+          release(q);
+          return;
+        }
+        // Tailles différentes, ou un dossier porte ce nom : la décision revient à
+        // l'utilisateur, jamais au programme.
+        if (conflictAll) {
+          // Réponse déjà donnée pour tous : on enchaîne sur place, en gardant le
+          // créneau d'envoi que cet élément occupe déjà.
+          if (conflictAll === "skip") { skipped(q, "Conservé sur le téléphone"); release(q); return; }
+          q.mode = conflictAll === "replace" ? "replace" : "";
+          q.decided = true;
+          return upload(q);
+        }
+        q.state = "conflit";
+        q.info = r;
+        q.msg = "En attente de votre choix";
+        paint(q);
+        release(q);
+      })
+      .catch(function (e) { fail(q, e.message); });
+  }
+
+  function askNextConflict() {
+    if (conflictOpen) return;
+    var q = null;
+    for (var i = 0; i < queue.length; i++) {
+      if (queue[i].state === "conflit") { q = queue[i]; break; }
+    }
+    if (!q) return;
+    if (conflictAll) { decide(q, conflictAll); return; }
+
+    conflictOpen = true;
+    $("cfname").textContent = q.rel || q.file.name;
+    $("cfphone").textContent = q.info.state === "directory"
+      ? "Un dossier porte ce nom"
+      : size(q.info.size);
+    $("cfpc").textContent = size(q.file.size);
+
+    // « 28 Mo » contre « 28 Mo » ne dit pas pourquoi les deux fichiers diffèrent : quand
+    // l'arrondi les rend identiques, la taille exacte s'affiche en dessous.
+    var phoneBytes = q.info.state === "directory" ? -1 : q.info.size;
+    var sameRounded = phoneBytes >= 0 && size(phoneBytes) === size(q.file.size);
+    $("cfphonex").classList.toggle("hide", !sameRounded);
+    $("cfpcx").classList.toggle("hide", !sameRounded);
+    if (sameRounded) {
+      $("cfphonex").textContent = octets(phoneBytes);
+      $("cfpcx").textContent = octets(q.file.size);
+    }
+
+    // Musique et vidéo : la durée de chaque version. Celle du téléphone vient avec la
+    // réponse ; celle de l'ordinateur se mesure ici, le temps d'un battement.
+    var media = q.info.media === true;
+    $("cfphonedur").classList.toggle("hide", !media);
+    $("cfpcdur").classList.toggle("hide", !media);
+    if (media) {
+      $("cfphonedur").textContent = "Durée " + fmtDuration(q.info.duration);
+      $("cfpcdur").textContent = "Durée : calcul…";
+      var token = ++conflictSeq;
+      localDuration(q.file, function (ms) {
+        // La boîte a pu passer au conflit suivant entre-temps.
+        if (token === conflictSeq) $("cfpcdur").textContent = "Durée " + fmtDuration(ms);
+      });
+    }
+    $("cfall").checked = false;
+    // Remplacer un dossier par un fichier n'a pas de sens : le bouton disparaît.
+    $("cfreplace").classList.toggle("hide", q.info.state === "directory");
+    $("conflict").classList.remove("hide");
+
+    function answer(choice) {
+      var all = $("cfall").checked;
+      if (all) conflictAll = choice;
+      $("conflict").classList.add("hide");
+      conflictOpen = false;
+      decide(q, choice);
+      if (all) {
+        // Les conflits déjà en attente reçoivent la même réponse sans rouvrir la boîte.
+        queue.forEach(function (other) {
+          if (other.state === "conflit") decide(other, choice);
+        });
+      }
+      askNextConflict();
+      pump();
+    }
+    $("cfskip").onclick = function () { answer("skip"); };
+    $("cfkeep").onclick = function () { answer("keep"); };
+    $("cfreplace").onclick = function () { answer("replace"); };
+  }
+
+  function skipped(q, msg) {
+    q.state = "ignore";
+    q.msg = msg;
+    q.bar.style.width = "100%";
+    paint(q);
+  }
+
+  /**
+   * Applique la réponse donnée à un conflit. L'élément a déjà relâché son créneau en
+   * entrant dans l'état « conflit » : il repart par la file, à l'état « pret » pour ne
+   * pas repasser par la vérification qui vient de poser la question.
+   */
+  function decide(q, choice) {
+    if (choice === "skip") return skipped(q, "Conservé sur le téléphone");
+    q.mode = choice === "replace" ? "replace" : "";
+    q.decided = true;
+    q.state = "pret";
+    q.msg = choice === "replace" ? "En attente · remplacera" : "En attente · gardera les deux";
+    paint(q);
+    pump();
+  }
+
+  // ---------- Envoi ----------
+
+  function upload(q) {
+    q.state = "envoi"; q.msg = "0 % · " + size(q.file.size); paint(q);
+    var fd = new FormData();
+    fd.append("file", q.file, q.file.name);
+    var xhr = new XMLHttpRequest();
+    q.xhr = xhr;
+    xhr.open("POST", "/api/upload?path=" + enc(q.dir) + "&rel=" + enc(q.rel) +
+      "&size=" + q.file.size + (q.mode ? "&mode=" + q.mode : ""));
+    xhr.setRequestHeader("X-Fm36", "1");
+    xhr.upload.onprogress = function (e) {
+      if (!e.lengthComputable) return;
+      var pc = Math.round(e.loaded / e.total * 100);
+      q.bar.style.width = pc + "%";
+      q.msg = pc + " % · " + size(e.total);
+      q.pct.textContent = q.msg;
+    };
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        q.state = "fini";
+        q.bar.style.width = "100%";
+        q.msg = (q.mode === "replace" ? "Remplacé · " : "Envoyé · ") + size(q.file.size);
+        paint(q);
+        scheduleReload(q.dir);
+      } else {
+        var msg = "Échec (" + xhr.status + ")";
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
+        fail(q, msg, true);
+      }
+      release(q);
+    };
+    // Une coupure réseau, un Wi-Fi qui s'endort : le fichier n'est pas perdu, il est
+    // relançable. C'est tout l'intérêt de garder l'objet File dans la file.
+    xhr.onerror = function () { fail(q, "Connexion perdue", true); release(q); };
+    xhr.ontimeout = function () { fail(q, "Délai dépassé", true); release(q); };
+    xhr.send(fd);
+  }
+
+  function fail(q, msg, counted) {
+    q.state = "echec";
+    q.msg = msg || "Échec";
+    paint(q);
+    if (!counted) release(q);
+  }
+
+  function relaunch(q) {
+    if (q.state !== "echec") return;
+    q.bar.style.width = "0";
+    // Un élément dont le conflit était tranché repart sur cette décision ; les autres
+    // repassent par la vérification, qui rattrape le cas d'un envoi finalement arrivé.
+    q.state = q.decided ? "pret" : "attente";
+    q.msg = "En attente";
+    paint(q);
+    pump();
+  }
+
+  $("qretry").onclick = function () {
+    queue.forEach(function (q) { if (q.state === "echec") relaunch(q); });
+  };
+
+  $("qclear").onclick = function () {
+    // Seules les lignes au repos partent : effacer un envoi en cours ne l'arrêterait
+    // pas, il continuerait sans rien à quoi se rattacher.
+    queue = queue.filter(function (q) {
+      var over = q.state === "fini" || q.state === "ignore" || q.state === "echec";
+      if (over) q.box.remove();
+      return !over;
+    });
+    conflictAll = null;
+    updateBar();
+  };
+
+  // Un envoi de deux cents fichiers rechargerait deux cents fois la liste : on groupe.
+  var reloadTimer = null;
+  function scheduleReload(dir) {
+    if (dir !== cur) return;
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(function () { load(cur); }, 700);
+  }
+
+  // ---------- Ce que l'utilisateur dépose ou choisit ----------
+
+  $("pick").onclick = function () { $("filein").click(); };
+  $("filein").onchange = function () { enqueue(fromFileList(this.files)); this.value = ""; };
+  $("pickdir").onclick = function () { $("dirin").click(); };
+  $("dirin").onchange = function () { enqueue(fromFileList(this.files)); this.value = ""; };
+
+  function fromFileList(list) {
+    var out = [];
+    Array.prototype.forEach.call(list, function (f) {
+      // webkitRelativePath est renseigné par le sélecteur de dossier ; vide sinon.
+      out.push({ file: f, rel: f.webkitRelativePath || f.name });
+    });
+    return out;
+  }
+
+  var drop = $("drop"), depth = 0;
+  ["dragenter", "dragover"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      e.preventDefault();
+      if (ev === "dragenter") depth++;
+      drop.classList.add("on");
+    });
+  });
+  document.addEventListener("dragleave", function () {
+    if (--depth <= 0) { depth = 0; drop.classList.remove("on"); }
+  });
+  document.addEventListener("drop", function (e) {
+    e.preventDefault(); depth = 0; drop.classList.remove("on");
+    var dt = e.dataTransfer;
+    if (!dt) return;
+
+    // Un glisser-déposer de dossier n'expose ses fichiers que par l'API « entries » :
+    // dataTransfer.files ne contient alors que le dossier lui-même, sans contenu — d'où
+    // l'ancien « rien ne se passe ».
+    var entries = [];
+    if (dt.items && dt.items.length && dt.items[0].webkitGetAsEntry) {
+      for (var i = 0; i < dt.items.length; i++) {
+        var entry = dt.items[i].webkitGetAsEntry();
+        if (entry) entries.push(entry);
+      }
+    }
+    if (!entries.length) { enqueue(fromFileList(dt.files || [])); return; }
+
+    toast("Lecture du contenu…");
+    var out = [];
+    Promise.all(entries.map(function (en) { return walk(en, "", out); }))
+      .then(function () { enqueue(out); });
+  });
+
+  /** Parcourt une entrée déposée, fichier ou dossier, et rassemble ses fichiers. */
+  function walk(entry, prefix, out) {
+    return new Promise(function (resolve) {
+      if (entry.isFile) {
+        entry.file(function (f) {
+          out.push({ file: f, rel: prefix + entry.name });
+          resolve();
+        }, function () { resolve(); });
+        return;
+      }
+      if (!entry.isDirectory) return resolve();
+      var reader = entry.createReader();
+      var found = [];
+      // readEntries ne rend qu'une centaine d'entrées à la fois : il faut rappeler
+      // jusqu'au lot vide, sinon un dossier de mille fichiers en livre cent.
+      (function more() {
+        reader.readEntries(function (batch) {
+          if (!batch.length) {
+            Promise.all(found.map(function (e) {
+              return walk(e, prefix + entry.name + "/", out);
+            })).then(resolve);
+            return;
+          }
+          found = found.concat(Array.prototype.slice.call(batch));
+          more();
+        }, function () { resolve(); });
+      })();
+    });
+  }
+
+  // ---------- Démarrage ----------
+
+  fetch("/api/session").then(function (r) { return r.json(); }).then(function (s) {
+    $("devname").textContent = s.device || "";
+    setCaps(s.upload, s.manage);
+    if (s.auth) { showApp(); load(null); } else { showGate(); }
+  }).catch(function () { showGate(); });
+})();
+</script>
+</body>
+</html>

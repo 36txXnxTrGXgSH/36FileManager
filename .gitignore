@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# 36FileManager — ce qui ne doit JAMAIS entrer dans le dépôt (il est public).
+# ---------------------------------------------------------------------------
+
+# Clé de signature et ses identifiants. Quiconque les détiendrait pourrait
+# publier une fausse mise à jour qu'Android installerait par-dessus
+# l'application. Les sauvegarder hors du poste : une clé perdue ne se
+# reconstruit pas, et plus aucune mise à jour ne s'installerait.
+keystore/
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Chemins propres à la machine qui compile.
+local.properties
+
+# Sorties de compilation (plusieurs centaines de Mo).
+build/
+.gradle/
+.kotlin/
+.cxx/
+captures/
+
+# Livrables : ils vont dans les Releases, pas dans l'historique. Les zips de
+# sources fabriqués à la main ont déjà contenu la clé privée par le passé.
+*.apk
+*.aab
+*.zip
+
+# Journaux, rapports de plantage, vidages mémoire : ils peuvent contenir des
+# chemins et des noms de fichiers de l'appareil.
+*.log
+crash-*.txt
+*.hprof
+
+# Environnements et outils locaux.
+.idea/
+*.iml
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db
