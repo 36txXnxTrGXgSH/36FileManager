@@ -287,7 +287,7 @@ fun EmptyState(icon: ImageVector, title: String, subtitle: String = "") {
 }
 
 @Composable
-fun ProgressOverlay(progress: OpProgress) {
+fun ProgressOverlay(progress: OpProgress, onCancel: (() -> Unit)? = null) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -314,9 +314,29 @@ fun ProgressOverlay(progress: OpProgress) {
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "${progress.done} / ${progress.total}",
+                        if (progress.inBytes)
+                            "${Formatters.size(progress.bytesDone)} / ${Formatters.size(progress.bytesTotal)} · " +
+                                "${(progress.fraction * 100).toInt()} %"
+                        else "${Formatters.count(progress.done)} / ${Formatters.count(progress.total)}",
                         style = MaterialTheme.typography.labelMedium
                     )
+                    // « 42 Mo/s · 1 234 fichiers restants · ~3 min »
+                    val pace = buildList {
+                        if (progress.speed > 0) add("${Formatters.size(progress.speed)}/s")
+                        if (progress.filesTotal > 0) {
+                            val left = (progress.filesTotal - progress.filesDone).coerceAtLeast(0)
+                            add("${Formatters.count(left)} fichier${if (left > 1) "s" else ""} restant${if (left > 1) "s" else ""}")
+                        }
+                        if (progress.etaSeconds >= 0) add(Formatters.remaining(progress.etaSeconds))
+                    }
+                    if (pace.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            pace.joinToString(" · "),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
                 if (progress.currentName.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
@@ -327,6 +347,10 @@ fun ProgressOverlay(progress: OpProgress) {
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                if (onCancel != null) {
+                    Spacer(Modifier.height(10.dp))
+                    androidx.compose.material3.TextButton(onClick = onCancel) { Text("Annuler") }
                 }
             }
         }

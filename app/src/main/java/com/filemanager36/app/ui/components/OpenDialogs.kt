@@ -47,6 +47,25 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.filemanager36.app.data.FileItem
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.core.content.ContextCompat
+import com.filemanager36.app.data.ArchiveSummary
+import com.filemanager36.app.data.Archives
+import com.filemanager36.app.data.StorageVolumeInfo
+import kotlinx.coroutines.launch
+import java.io.File
 import com.filemanager36.app.util.ApkUtil
 import com.filemanager36.app.util.Formatters
 import com.filemanager36.app.util.ShareUtil
@@ -218,32 +237,202 @@ fun ApkInstallDialog(
 }
 
 /**
- * Archive .zip touchée dans une liste : l'application sait l'extraire elle-même,
+ * Archive touchée dans une liste : ZIP, 7z, RAR, TAR… L'application l'extrait elle-même,
  * ce qui évite de dépendre d'un décompresseur tiers rarement installé.
+ *
+ * Avant d'extraire, la fenêtre lit l'inventaire de l'archive — sans la décompresser — et
+ * dit ce qui va se passer : combien de fichiers, combien de place, s'il en reste assez,
+ * s'il faut un mot de passe. Une extraction de vingt minutes qui échoue faute de place à
+ * la fin, c'est exactement ce qu'elle évite.
  */
 @Composable
 fun ArchiveActionDialog(
     item: FileItem,
-    onExtract: () -> Unit,
+    volumes: List<StorageVolumeInfo>,
+    onExtract: (password: CharArray?, destination: File?) -> Unit,
     onMessage: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var summary by remember(item.path) { mutableStateOf<ArchiveSummary?>(null) }
+    var readError by remember(item.path) { mutableStateOf<String?>(null) }
+    var destination by remember(item.path) { mutableStateOf<File?>(null) }
+    var picking by remember { mutableStateOf(false) }
+    var password by remember(item.path) { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+    var passwordError by remember(item.path) { mutableStateOf<String?>(null) }
+    var checking by remember { mutableStateOf(false) }
+
+    LaunchedEffect(item.path) {
+        withContext(Dispatchers.IO) {
+            runCatching { Archives.summarize(item.file) }
+                .onSuccess { summary = it }
+                .onFailure { readError = Archives.describe(it) }
+        }
+    }
+
+    val target = destination ?: item.file.parentFile
+    // Même marge que l'extraction elle-même : 512 Mio, ou 2 % du volume.
+    val free = remember(target?.path) {
+        target?.let { (it.usableSpace - maxOf(512L shl 20, it.totalSpace / 50)).coerceAtLeast(0) } ?: 0L
+    }
+    val known = summary
+    val noRoom = known?.totalBytes?.let { it > free } == true
+
+    // Android 13+ : sans cette permission, la notification de progression reste
+    // invisible — l'extraction se fait quand même, on ne bloque rien sur un refus.
+    val notifPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    fun launch(pw: CharArray?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        onExtract(pw, destination)
+        onDismiss()
+    }
+
+    if (picking) {
+        FolderPickerDialog(
+            title = "Extraire dans…",
+            volumes = volumes,
+            startPath = target?.absolutePath,
+            onDismiss = { picking = false },
+            onPick = { destination = File(it); picking = false }
+        )
+        return
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Archive, null) },
         title = { Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
-            Text(
-                "Archive ZIP de ${Formatters.size(item.size)}.\n\n" +
-                    "L'extraction crée un dossier du même nom à côté de l'archive."
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val format = known?.format?.label ?: Archives.formatFromName(item.name)?.label ?: ""
+                Text(
+                    "Archive $format de ${Formatters.size(item.size)}" +
+                        (known?.volumes?.takeIf { it > 1 }?.let { " en $it parties" } ?: "") + "."
+                )
+                when {
+                    readError != null -> Text(readError!!, color = MaterialTheme.colorScheme.error)
+                    known == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Lecture du contenu…", style = MaterialTheme.typography.bodySmall)
+                    }
+                    else -> {
+                        val files = known.files
+                        val bytes = known.totalBytes
+                        Text(
+                            when {
+                                files != null && bytes != null ->
+                                    "${Formatters.count(files)} fichier${if (files > 1) "s" else ""} · ${Formatters.size(bytes)} une fois extrait"
+                                bytes != null -> "${Formatters.size(bytes)} une fois extrait"
+                                known.needsPassword -> "Contenu protégé : il apparaîtra avec le mot de passe."
+                                else -> "La taille extraite n'est connue qu'en décompressant."
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+
+                // Destination, modifiable : une carte SD a souvent plus de place.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Dans : ${target?.name ?: "?"}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "${Formatters.size(free)} disponibles",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (noRoom) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = { picking = true }) { Text("Changer…") }
+                }
+                if (noRoom) {
+                    Text(
+                        "Pas assez de place à cet endroit. Choisissez un autre emplacement, " +
+                            "une carte SD par exemple.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                // Carte SD ou clé USB : formatées en exFAT/FAT, et montées par Android en
+                // écriture synchrone. Mesuré sur tablette : 5 à 7 fichiers créés par seconde,
+                // contre ~140 sur le stockage interne. Une archive de 200 000 fichiers y
+                // prendrait plus de huit heures : on le dit avant, pas après.
+                val manyFiles = known?.files ?: 0
+                val removable = target?.absolutePath?.startsWith("/storage/emulated/") == false
+                if (removable && manyFiles >= 2_000) {
+                    val hours = manyFiles / 6 / 3600
+                    Text(
+                        "Carte SD ou clé USB : Android y crée les fichiers très lentement, quelques-uns " +
+                            "par seconde. Pour ${Formatters.count(manyFiles)} fichiers, comptez " +
+                            (if (hours >= 1) "environ $hours h" else "de longues minutes") +
+                            ". Le stockage interne est bien plus rapide.",
+                        color = MaterialTheme.colorScheme.tertiary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (known?.needsPassword == true) {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it; passwordError = null },
+                        label = { Text("Mot de passe") },
+                        singleLine = true,
+                        isError = passwordError != null,
+                        supportingText = passwordError?.let { e -> { Text(e) } },
+                        visualTransformation = if (showPassword) VisualTransformation.None
+                        else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    if (showPassword) "Masquer" else "Afficher"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Text(
+                    "L'extraction crée un dossier du même nom. Les liens symboliques que " +
+                        "contiendrait l'archive ne sont jamais recréés.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         },
         confirmButton = {
-            TextButton(onClick = { onExtract(); onDismiss() }) {
-                Icon(Icons.Filled.Unarchive, null, Modifier.size(18.dp))
+            TextButton(
+                enabled = known != null && readError == null && !noRoom && !checking &&
+                    (known.needsPassword.not() || password.isNotEmpty()),
+                onClick = {
+                    if (known?.needsPassword != true) { launch(null); return@TextButton }
+                    // Le mot de passe est vérifié tout de suite, sur le début du premier
+                    // fichier : mieux vaut l'apprendre ici qu'au bout de vingt minutes.
+                    checking = true
+                    val pw = password.toCharArray()
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) { Archives.checkPassword(item.file, pw.copyOf()) }
+                        checking = false
+                        if (ok) launch(pw) else { passwordError = "Mot de passe incorrect"; pw.fill('\u0000') }
+                    }
+                }
+            ) {
+                if (checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Filled.Unarchive, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Extraire ici")
+                Text("Extraire")
             }
         },
         dismissButton = {

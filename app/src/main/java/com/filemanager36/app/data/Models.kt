@@ -159,25 +159,64 @@ data class OpProgress(
     val currentName: String = "",
     val done: Int = 0,
     val total: Int = 0,
-    val indeterminate: Boolean = false
+    val indeterminate: Boolean = false,
+    /**
+     * Progression en octets (extraction) : une archive d'un seul fichier de 15 Go
+     * resterait sinon à « 0 / 1 » pendant vingt minutes. -1 = non utilisé.
+     */
+    val bytesDone: Long = -1,
+    val bytesTotal: Long = -1,
+    /** Un bouton « Annuler » est proposé. */
+    val cancellable: Boolean = false,
+    /** Octets par seconde, sur les dernières secondes ; -1 = pas encore mesuré. */
+    val speed: Long = -1,
+    /** Fichiers traités et à traiter (copie, déplacement) ; -1 = non suivi. */
+    val filesDone: Long = -1,
+    val filesTotal: Long = -1,
+    /** Temps restant estimé, en secondes ; -1 = inconnu. */
+    val etaSeconds: Long = -1
 ) {
-    val fraction: Float get() = if (total <= 0) 0f else (done.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+    val inBytes: Boolean get() = bytesTotal > 0
+    val fraction: Float get() = when {
+        bytesTotal > 0 -> (bytesDone.toFloat() / bytesTotal.toFloat()).coerceIn(0f, 1f)
+        total <= 0 -> 0f
+        else -> (done.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+    }
 }
 
-/** Détails affichés dans la fiche « Informations ». */
+/**
+ * Détails affichés dans la fiche « Informations ».
+ *
+ * La fiche s'ouvre aussitôt avec ce qui se lit d'un coup (nom, type, date) ; le contenu
+ * d'un dossier se compte ensuite en direct ([scanning]), et les propriétés propres au
+ * type de fichier ([extras] : dimensions, durée, version d'APK…) arrivent à part.
+ */
 data class FileDetails(
     val name: String,
     val path: String,
     val isDirectory: Boolean,
     val sizeBytes: Long,
-    val fileCount: Int,
-    val folderCount: Int,
+    val fileCount: Long,
+    val folderCount: Long,
     val lastModified: Long,
     val mimeType: String,
     val readable: Boolean,
     val writable: Boolean,
-    val hidden: Boolean
-)
+    val hidden: Boolean,
+    /** Nombre d'éléments décrits : plus d'un pour une sélection multiple. */
+    val itemCount: Int = 1,
+    /** Comptage du contenu en cours. */
+    val scanning: Boolean = false,
+    /** Dossiers qu'on n'a pas pu lire : les totaux sont alors des minimums. */
+    val unreadable: Int = 0,
+    /** Cible d'un lien symbolique. */
+    val linkTarget: String? = null,
+    /** Propriétés propres au type, dans l'ordre d'affichage. */
+    val extras: List<Pair<String, String>> = emptyList(),
+    val extrasLoading: Boolean = false
+) {
+    val isSelection: Boolean get() = itemCount > 1
+}
 
 /** Dossier partagé publié par une machine du réseau. */
 data class SmbShare(

@@ -24,11 +24,16 @@ object FileKinds {
     private val audios = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac", "opus", "wma", "amr", "mid")
     private val docs = setOf("doc", "docx", "odt", "rtf", "txt", "md", "epub")
     private val sheets = setOf("xls", "xlsx", "ods", "csv", "ppt", "pptx", "odp")
-    private val archives = setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "jar")
+    private val archives = setOf(
+        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "jar",
+        "tgz", "tbz", "tbz2", "txz", "cbz", "cbr", "cb7"
+    )
     private val code = setOf("java", "kt", "js", "ts", "py", "c", "cpp", "h", "html", "css", "json", "xml", "sh", "yml", "yaml")
 
     fun of(name: String, isDirectory: Boolean): FileKind {
         if (isDirectory) return FileKind.FOLDER
+        // « jeu.7z.001 » : l'extension est « 001 », mais c'est bien une archive.
+        if (com.filemanager36.app.data.Archives.isArchiveName(name)) return FileKind.ARCHIVE
         return when (name.substringAfterLast('.', "").lowercase()) {
             in images -> FileKind.IMAGE
             in videos -> FileKind.VIDEO
@@ -97,13 +102,18 @@ object FileKinds {
      * une page HTML doit s'ouvrir dans le navigateur, un tableau CSV dans un tableur.
      * La visionneuse intégrée ne les reprend que si rien sur le téléphone ne les gère.
      */
-    private val richText = setOf("html", "htm", "csv", "tsv", "md", "markdown")
+    private val richText = setOf(
+        "html", "htm", "csv", "tsv", "md", "markdown",
+        // Bandes dessinées : des archives, mais faites pour une liseuse. L'extraction
+        // intégrée ne sert que si aucune n'est installée.
+        "cbz", "cbr", "cb7"
+    )
 
     fun prefersExternalApp(name: String): Boolean =
         name.substringAfterLast('.', "").lowercase() in richText
 
-    /** Archives que l'application sait ouvrir elle-même (extraction intégrée). */
-    fun isZip(name: String): Boolean = name.substringAfterLast('.', "").equals("zip", true)
+    /** Archives que l'application sait extraire elle-même : ZIP, 7z, RAR, TAR, GZ, BZ2, XZ… */
+    fun isArchive(name: String): Boolean = com.filemanager36.app.data.Archives.isArchiveName(name)
 
     /** Types pour lesquels on peut produire une miniature. */
     fun previewable(kind: FileKind): Boolean =

@@ -39,6 +39,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -130,15 +131,34 @@ fun DetailsDialog(details: FileDetails, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Informations") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 InfoLine("Nom", details.name)
-                InfoLine("Type", if (details.isDirectory) "Dossier" else details.mimeType)
-                InfoLine("Chemin", details.path)
-                InfoLine("Taille", Formatters.size(details.sizeBytes))
-                if (details.isDirectory) {
-                    InfoLine("Contenu", "${details.fileCount} fichier(s), ${details.folderCount} dossier(s)")
+                InfoLine(
+                    "Type",
+                    when {
+                        details.isSelection -> "Sélection"
+                        details.linkTarget != null -> "Lien symbolique"
+                        details.isDirectory -> "Dossier"
+                        else -> details.mimeType
+                    }
+                )
+                details.linkTarget?.let { InfoLine("Lien vers", it) }
+                InfoLine(if (details.isSelection) "Dans" else "Chemin", details.path)
+                val counting = if (details.scanning) " · calcul en cours…" else ""
+                InfoLine("Taille", Formatters.size(details.sizeBytes) + counting)
+                if (details.isDirectory || details.isSelection) {
+                    InfoLine(
+                        "Contenu",
+                        "${Formatters.count(details.fileCount)} fichier(s), ${Formatters.count(details.folderCount)} dossier(s)"
+                    )
                 }
-                InfoLine("Modifié le", Formatters.date(details.lastModified))
+                if (details.scanning) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                }
+                if (details.unreadable > 0) {
+                    InfoLine("Illisibles", "${Formatters.count(details.unreadable)} dossier(s) — totaux minimaux")
+                }
+                InfoLine(if (details.isSelection) "Plus récent" else "Modifié le", Formatters.date(details.lastModified))
                 InfoLine(
                     "Attributs",
                     buildList {
@@ -147,6 +167,16 @@ fun DetailsDialog(details: FileDetails, onDismiss: () -> Unit) {
                         if (details.hidden) add("masqué")
                     }.joinToString(", ").ifBlank { "—" }
                 )
+                // Propriétés propres au type : dimensions, durée, version d'APK, archive…
+                details.extras.forEach { (label, value) -> InfoLine(label, value) }
+                if (details.extrasLoading) {
+                    Text(
+                        "Lecture des propriétés…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } }
@@ -160,7 +190,7 @@ private fun InfoLine(label: String, value: String) {
             label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(96.dp)
+            modifier = Modifier.width(112.dp)
         )
         Text(value, style = MaterialTheme.typography.bodySmall)
     }

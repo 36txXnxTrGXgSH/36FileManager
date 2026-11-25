@@ -51,7 +51,7 @@ rien installer dessus.
 
 ## Fiche technique
 
-- **Version** : 2.5.1 (versionCode 21)
+- **Version** : 2.6.2 (versionCode 24)
 - **Package** : `com.filemanager36.app`
 - **minSdk** 26 (Android 8.0) · **targetSdk / compileSdk** 35
 - **AGP** 8.7.2 · **Kotlin** 2.0.21 · **Gradle** 8.14.3 · **JDK 17 à 21**
@@ -67,13 +67,14 @@ rien installer dessus.
 
 ### Opérations (fichiers **et** dossiers, y compris tout leur contenu)
 Copier · couper · coller · déplacer vers… · copier vers… · renommer · supprimer ·
-compresser en ZIP · extraire une archive · informations détaillées · partager.
+compresser en ZIP · extraire une archive (ZIP, 7z, RAR, TAR…) · informations détaillées · partager.
 
 - Sélection multiple par appui long, **« Tout sélectionner »** dans le menu « ⋮ ».
 - Anti-écrasement automatique (`photo.jpg` → `photo (1).jpg`), protection Zip-Slip,
   refus des déplacements d'un dossier dans lui-même, et **aucune traversée de lien
   symbolique** : supprimer `/sdcard` efface le lien, jamais le stockage qu'il désigne.
-- Barre de progression pour les opérations longues.
+- Barre de progression pour les opérations longues ; l'extraction avance en octets, se
+  poursuit écran éteint avec une notification et s'annule à tout moment.
 
 ### Coffre-fort
 - Code (ou mot de passe) + déverrouillage **biométrique** facultatif.
@@ -158,13 +159,30 @@ laissait certains formats, `.apk` en tête, sans aucun effet visible.
   qu'il ne l'est pas, la fiche l'explique et un bouton **Autoriser** mène droit à
   l'écran système ; l'état est revérifié au retour. Un APK exigeant une version
   d'Android supérieure à celle du téléphone est signalé avant l'échec.
-- **Archives `.zip`** : extraction intégrée, dans un dossier créé à côté de l'archive.
-  Une archive vide, chiffrée ou mal nommée est signalée au lieu d'annoncer un succès.
+- **Archives** : extraction intégrée, sans décompresseur tiers, dans un dossier créé à
+  côté de l'archive ou à l'endroit choisi (une carte SD, par exemple).
+  - Formats : **ZIP, 7z, RAR** (jusqu'à RAR5), **TAR**, `.tar.gz`/`.tgz`,
+    `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz`, et les fichiers seuls `.gz`, `.bz2`, `.xz`.
+    Le format est reconnu au contenu, pas seulement à l'extension.
+  - **Archives en plusieurs parties** : `.7z.001`, `.002`… et `.part1.rar`, `.part2.rar`…
+  - **Mots de passe** : ZIP (AES et ZipCrypto), 7z (AES-256, y compris noms chiffrés), RAR
+    (y compris en-têtes chiffrés). Le mot de passe est vérifié avant de lancer.
+  - Avant d'extraire, une fenêtre lit l'inventaire **sans rien décompresser** : nombre de
+    fichiers, taille une fois extrait, place disponible à destination. Pas assez de place :
+    l'extraction n'est pas lancée.
+  - Noms des ZIP créés sous Windows (accents en CP850/CP437) restitués correctement.
+  - Liens symboliques jamais recréés, chemins remontants (`..`) refusés : une archive
+    piégée ne peut rien écrire hors de son dossier.
+  - Annulée, à court de place ou interrompue (application fermée en route) : le dossier
+    partiel est retiré, au besoin au lancement suivant.
+- **Bandes dessinées** `.cbz`, `.cbr`, `.cb7` : confiées à une liseuse si le téléphone en a
+  une, sinon proposées à l'extraction.
 - **Texte** (txt, log, json, xml, sous-titres, code, configuration…) : visionneuse
   intégrée en police à chasse fixe, avec balayage vers le fichier suivant. Beaucoup de
   téléphones n'ont aucune application déclarant `text/plain` : le sélecteur système
   s'ouvrait vide. Lecture bornée à 256 Kio, rendu ligne par ligne, lignes très longues
-  découpées — un JSON minifié ne fige plus l'affichage.
+  découpées — un JSON minifié ne fige plus l'affichage. L'encodage est détecté (UTF-8,
+  UTF-16, ou windows-1252 pour les vieux fichiers Windows) : les accents s'affichent.
 - **HTML, CSV, Markdown** partent au navigateur ou au tableur du téléphone quand il y
   en a un, et ne retombent sur la visionneuse texte que sinon.
 - **Format inconnu** : au lieu d'un sélecteur vide, une boîte **« Ouvrir en tant
@@ -382,6 +400,12 @@ app/src/main/java/com/filemanager36/app/
 │  ├─ Prefs.kt              réglages + favoris + serveurs + matériel cryptographique
 │  ├─ StorageRepo.kt        volumes, listage trié, fil d'Ariane
 │  ├─ FileOperations.kt     copier/déplacer/supprimer/renommer/ZIP/infos
+│  ├─ Archives.kt           détection, inventaire et extraction ZIP/7z/RAR/TAR/GZ/BZ2/XZ
+│  ├─ SevenZPlan.kt         blocs d'un 7z, pour les décoder en parallèle
+│  ├─ TreeDeleter.kt        suppression d'arborescences en parallèle
+│  ├─ TreeCopier.kt         copie / déplacement : octets, vitesse, fichiers restants, annulation
+│  ├─ TreeScanner.kt        parcours parallèle sans suivre les liens (Informations, copie)
+│  ├─ FileDetailsReader.kt  fiche « Informations » par type de fichier
 │  ├─ VaultCrypto.kt        PBKDF2, AES-GCM, AES-CBC, HMAC, clé Keystore biométrique
 │  ├─ VaultRepository.kt    index chiffré, import/export du coffre
 │  ├─ SmbRepository.kt      SMB/CIFS
@@ -405,6 +429,47 @@ app/src/main/java/com/filemanager36/app/
 app/src/main/assets/share/index.html   page servie au navigateur du PC
 app/src/test/…/MultipartReaderTest.kt  tests JVM du lecteur multipart
 ```
+
+## Nouveautés de la 2.6.2
+
+- **Copier et déplacer** : barre de progression en octets, vitesse, fichiers restants et
+  temps restant ; bouton Annuler ; l'opération continue écran éteint (service de premier
+  plan). Quatre fichiers écrits à la fois, place libre vérifiée avant de commencer.
+- **Déplacement annulé = rien n'a bougé** : les copies faites sont retirées, les originaux
+  n'ont jamais été touchés (ils ne sont effacés qu'après une copie sans erreur).
+- **« Informations » corrigée** : la fiche s'ouvre aussitôt et compte en direct (245 000
+  éléments en ~11 s, contre plusieurs minutes de silence). Elle décrit chaque type :
+  photo (dimensions, appareil, date de prise de vue), vidéo et musique (durée, résolution,
+  titre, artiste…), APK (application, paquet, version, déjà installée ?), archive
+  (contenu, taille extraite), PDF (pages), texte (lignes), lien symbolique (cible). Elle
+  accepte aussi une sélection de plusieurs éléments.
+
+## Nouveautés de la 2.6.1
+
+- **Extraction bien plus rapide** : plusieurs fichiers écrits à la fois (le stockage
+  d'Android en crée 22 par seconde un par un, 143 à quatre en parallèle), et les 7z
+  décompressés bloc par bloc sur plusieurs cœurs.
+- **Suppression des gros dossiers** en parallèle, avec le nombre d'éléments supprimés, un
+  bouton Annuler, et qui continue écran éteint.
+- **« Extraire vers… »** dans le menu de sélection.
+- Avertissement quand on extrait vers une carte SD une archive de milliers de fichiers :
+  Android y crée 5 à 7 fichiers par seconde seulement.
+- **Corrigé** : l'application ne se lançait plus après l'installation de la 2.6.0.
+
+## Nouveautés de la 2.6.0
+
+- **Extraction des archives 7z, RAR, TAR, GZ, BZ2 et XZ**, en plus du ZIP — y compris en
+  plusieurs parties (`.7z.001`, `.part1.rar`) et protégées par mot de passe.
+- **Fenêtre d'extraction** : nombre de fichiers, taille une fois extrait et place restante
+  avant de lancer ; destination modifiable, une carte SD par exemple.
+- **Progression en octets, bouton Annuler**, et extraction qui se poursuit écran éteint,
+  avec une notification.
+- Une extraction interrompue (application fermée, mise à jour) ne laisse plus de dossier à
+  moitié rempli : il est retiré au lancement suivant.
+- Les ZIP créés sous Windows gardent leurs accents ; la limite de 16 Go par extraction est
+  remplacée par une vérification de la place réelle.
+- **Corrigé** : les accents des fichiers texte enregistrés sous Windows s'affichent
+  correctement dans la visionneuse.
 
 ## Nouveautés de la 2.5.1
 
@@ -492,7 +557,7 @@ Version de **durcissement** : aucune fonctionnalité nouvelle, l'usage est ident
 - Mots de passe des lecteurs réseau chiffrés par l'AndroidKeystore.
 - Contenu du coffre-fort authentifié (HMAC) — coffres existants compatibles.
 - Les noms de fichiers venus d'un serveur SMB ou d'un espace cloud sont assainis.
-- L'extraction d'une archive ZIP vérifie l'espace libre et refuse les bombes de
+- L'extraction d'une archive vérifie l'espace libre et refuse les bombes de
   décompression.
 - **Correction** : deux téléphones du même modèle ne se voyaient pas dans la découverte.
 - Divers : moins de mémoire retenue, QR code recalculé seulement quand l'adresse change,

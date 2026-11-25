@@ -18,6 +18,15 @@ import com.filemanager36.app.data.FavoriteEntry
 import com.filemanager36.app.data.FileDetails
 import com.filemanager36.app.data.FileItem
 import com.filemanager36.app.data.FileOperations
+import com.filemanager36.app.util.Formatters
+import com.filemanager36.app.OperationService
+import com.filemanager36.app.data.ArchiveCancelled
+import com.filemanager36.app.data.Archives
+import com.filemanager36.app.data.TreeDeleter
+import com.filemanager36.app.data.TreeCopier
+import com.filemanager36.app.data.TreeScanner
+import com.filemanager36.app.data.FileDetailsReader
+import java.util.concurrent.atomic.AtomicBoolean
 import com.filemanager36.app.data.FileSearch
 import com.filemanager36.app.data.CategoryFolder
 import com.filemanager36.app.data.MediaCategory
@@ -66,6 +75,9 @@ private const val MAX_SEARCH_RESULTS = 1000
 /** Pause après la dernière frappe avant de lancer le parcours. */
 private const val SEARCH_DEBOUNCE_MS = 350L
 
+/** Reprise d'une extraction interrompue déjà examinée dans ce processus ? Voir recoverInterruptedExtraction. */
+@Volatile private var extractionRecoveryDone = false
+
 class FmViewModel(app: Application) : AndroidViewModel(app) {
 
     private val ctx: Context get() = getApplication()
@@ -99,6 +111,7 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
     var message by mutableStateOf<String?>(null)
 
     var detailsTarget by mutableStateOf<FileDetails?>(null)
+        private set
 
     // ------------------------------------------------------------------
     // Réglages
@@ -359,6 +372,7 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshAccess() {
         hasStorageAccess = Permissions.hasFullStorageAccess(ctx)
         if (!hasStorageAccess) return
+        recoverInterruptedExtraction()
         // Le balayage des points de montage et les StatFs peuvent bloquer plusieurs
         // centaines de millisecondes sur un volume OTG capricieux : jamais sur l'UI.
         viewModelScope.launch {
@@ -687,21 +701,61 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
         val cb = clipboard
         if (cb.isEmpty) return
         val dest = File(destination)
-        runOperation(if (cb.isMove) "Déplacement" else "Copie") { report ->
-            val res = FileOperations.copyOrMove(
-                cb.paths.map { File(it) }, dest, cb.isMove
-            ) { name, done, total -> report(name, done, total) }
-            clipboard = Clipboard()
-            resultMessage(res, if (cb.isMove) "déplacé(s)" else "copié(s)")
+        val title = if (cb.isMove) "Déplacement" else "Copie"
+        // Service de premier plan et annulation, comme l'extraction : 40 Go vers une carte
+        // SD durent des heures, écran éteint compris. La barre avance en octets, avec la
+        // vitesse, les fichiers restants et le temps restant.
+        runByteOperation(title) { report, cancelled ->
+            val out = TreeCopier.run(cb.paths.map { File(it) }, dest, cb.isMove, cancelRequest = cancelled) { p ->
+                when (p.phase) {
+                    TreeCopier.Phase.INVENTORY ->
+                        report("Inventaire : ${Formatters.count(p.filesTotal)} éléments", 0, 0)
+                    TreeCopier.Phase.COPY -> {
+                        opFilesDone = p.filesDone
+                        opFilesTotal = p.filesTotal
+                        report(p.name, p.bytesDone, p.bytesTotal)
+                    }
+                    TreeCopier.Phase.CLEANUP -> {
+                        opFilesDone = -1
+                        opFilesTotal = -1
+                        report(
+                            if (p.filesTotal > 0) "Effacement des originaux : ${Formatters.count(p.filesDone)} / ${Formatters.count(p.filesTotal)}"
+                            else "Effacement des originaux…",
+                            p.bytesTotal, p.bytesTotal
+                        )
+                    }
+                }
+            }
+            if (out.cancelled) {
+                // Le presse-papiers reste : on peut relancer.
+                message = when {
+                    out.cancelledDuringCleanup ->
+                        "Déplacement interrompu : la copie est complète, une partie des originaux est restée en place"
+                    cb.isMove -> "Déplacement annulé : rien n'a bougé"
+                    else -> "Copie interrompue : ${Formatters.count(out.filesCopied)} fichier(s) copié(s) sur ${Formatters.count(out.filesTotal)}"
+                }
+            } else {
+                clipboard = Clipboard()
+                resultMessage(FileOperations.OperationResult(out.succeeded, out.failed), if (cb.isMove) "déplacé(s)" else "copié(s)")
+            }
         }
     }
 
     fun deleteSelection() {
         val files = selectedFiles()
         if (files.isEmpty()) return
-        runOperation("Suppression") { report ->
-            val res = FileOperations.deleteAll(files) { name, done, total -> report(name, done, total) }
-            resultMessage(res, "supprimé(s)")
+        // Service de premier plan, comme l'extraction : un dossier de 80 000 éléments
+        // prend quelques minutes, écran éteint compris, et doit pouvoir s'interrompre.
+        runByteOperation("Suppression", items = true) { report, cancelled ->
+            val out = TreeDeleter.delete(files, cancelled) { name, done, total ->
+                report(name, done.toLong(), total.toLong())
+            }
+            val failed = out.remaining.map { it.name }
+            if (out.cancelled) {
+                message = "Suppression interrompue : ${out.deleted} élément(s) supprimé(s) sur ${out.total}"
+            } else {
+                resultMessage(FileOperations.OperationResult(files.size - failed.size, failed), "supprimé(s)")
+            }
         }
     }
 
@@ -745,28 +799,101 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun extractSelection() {
-        val files = selectedFiles().filter { it.extension.equals("zip", true) }
-        if (files.isEmpty()) { message = "Sélectionnez une archive .zip"; return }
-        runOperation("Extraction") { report ->
+    /**
+     * « Extraire ici » sur une sélection : chaque archive dans un dossier à son nom.
+     * Une archive protégée est signalée et passée — on ne peut pas demander un mot de
+     * passe par archive au milieu d'un lot ; la toucher seule l'ouvre avec la question.
+     */
+    fun extractSelection(destination: File? = null) {
+        val files = selectedFiles().filter { it.isFile && Archives.isArchiveName(it.name) }
+        if (files.isEmpty()) { message = "Sélectionnez une archive (zip, 7z, rar, tar…)"; return }
+        val parent = destination ?: File(currentPath)
+        runByteOperation("Extraction") { report, cancelled ->
+            var ok = 0
+            val problems = mutableListOf<String>()
             for (f in files) {
-                val dest = FileOperations.uniqueTarget(File(currentPath), f.nameWithoutExtension)
-                FileOperations.unzip(f, dest) { n, d, t -> report(n, d, t) }
-                    .onFailure { message = "Extraction impossible : ${it.message}" }
+                if (cancelled()) break
+                try {
+                    Archives.extract(
+                        f, parent, null, isCancelled = cancelled,
+                        onOutputCreated = { prefs.extractionEnCours = it.absolutePath }
+                    ) { n, d, t -> report(n, d, t) }
+                    ok++
+                } catch (e: ArchiveCancelled) {
+                    throw e
+                } catch (e: Exception) {
+                    problems += "${f.name} : ${Archives.describe(e)}"
+                }
             }
-            message = "Extraction terminée"
+            message = when {
+                problems.isEmpty() -> if (ok == 1) "Archive extraite" else "$ok archives extraites"
+                ok == 0 -> problems.first()
+                else -> "$ok extraite(s) · ${problems.size} en échec — ${problems.first()}"
+            }
+            // « Extraire vers… » : on emmène l'utilisateur là où sont ses fichiers.
+            if (destination != null && ok > 0) withContext(Dispatchers.Main) { openPath(parent.absolutePath) }
         }
     }
 
-    fun showDetails(path: String) {
-        viewModelScope.launch {
+    private var detailsJob: Job? = null
+    private var detailsStop: AtomicBoolean? = null
+
+    fun showDetails(path: String) = showDetails(listOf(path))
+
+    /**
+     * Fiche « Informations » d'un ou plusieurs éléments. Elle s'ouvre aussitôt ; le contenu
+     * d'un dossier se compte ensuite en direct, en parallèle — 245 000 éléments laissaient
+     * l'ancienne fiche muette plusieurs minutes. Fermer la fiche arrête le comptage.
+     */
+    fun showDetails(paths: List<String>) {
+        closeDetails()
+        if (paths.isEmpty()) return
+        val files = paths.map { File(it) }
+        val stop = AtomicBoolean(false)
+        detailsStop = stop
+        val app = getApplication<Application>()
+        detailsJob = viewModelScope.launch {
             // Un dossier système pathologique (/proc, montage figé) ne doit pas
             // remonter une exception jusqu'au gestionnaire par défaut.
-            val res = withContext(Dispatchers.IO) {
-                runCatching { FileOperations.details(File(path)) }
+            val first = withContext(Dispatchers.IO) { runCatching { FileDetailsReader.basic(files) } }
+                .getOrElse {
+                    message = "Informations indisponibles : ${it.message}"
+                    return@launch
+                }
+            if (detailsStop !== stop) return@launch
+            detailsTarget = first
+            if (first.extrasLoading) launch {
+                val extras = withContext(Dispatchers.IO) {
+                    runCatching { FileDetailsReader.extras(app, files.single()) }.getOrDefault(emptyList())
+                }
+                if (detailsStop === stop) detailsTarget = detailsTarget?.copy(extras = extras, extrasLoading = false)
             }
-            res.fold({ detailsTarget = it }, { message = "Informations indisponibles : ${it.message}" })
+            if (first.scanning) {
+                val totals = withContext(Dispatchers.IO) {
+                    TreeScanner.measure(files, { stop.get() }) { f, d, b ->
+                        viewModelScope.launch(Dispatchers.Main) {
+                            if (detailsStop === stop && detailsTarget?.scanning == true) {
+                                detailsTarget = detailsTarget?.copy(fileCount = f, folderCount = d, sizeBytes = b)
+                            }
+                        }
+                    }
+                }
+                if (detailsStop === stop) {
+                    detailsTarget = detailsTarget?.copy(
+                        fileCount = totals.files, folderCount = totals.folders, sizeBytes = totals.bytes,
+                        unreadable = totals.unreadable, scanning = false
+                    )
+                }
+            }
         }
+    }
+
+    fun closeDetails() {
+        detailsStop?.set(true)
+        detailsStop = null
+        detailsJob?.cancel()
+        detailsJob = null
+        detailsTarget = null
     }
 
     fun shareSelection(context: Context) {
@@ -809,7 +936,7 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
     /** APK dont la fiche d'installation est affichée. */
     var apkTarget by mutableStateOf<FileItem?>(null)
 
-    /** Archive .zip pour laquelle on propose l'extraction. */
+    /** Archive pour laquelle on propose l'extraction. */
     var archiveTarget by mutableStateOf<FileItem?>(null)
 
     /** Fichier qu'aucune application ne sait ouvrir : on propose « Ouvrir en tant que… ». */
@@ -820,14 +947,14 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
             item.isDirectory -> openPath(item.path)
             // Un APK n'est pas « ouvert » mais installé : fiche détaillée d'abord.
             FileKinds.of(item.name, false) == FileKind.APK -> apkTarget = item
-            // Une archive ZIP est extraite par l'application elle-même : inutile de
-            // dépendre d'une application tierce qui n'est souvent pas installée.
-            FileKinds.isZip(item.name) -> archiveTarget = item
-            // HTML, CSV, Markdown : le navigateur ou le tableur du téléphone les rend
-            // bien mieux que du texte brut. La visionneuse intégrée ne les reprend que
-            // si rien sur l'appareil ne sait les ouvrir.
+            // HTML, CSV, Markdown, bandes dessinées : une application dédiée du
+            // téléphone les rend bien mieux. La visionneuse et l'extraction intégrées ne
+            // les reprennent que si rien sur l'appareil ne sait les ouvrir.
             FileKinds.prefersExternalApp(item.name) &&
                 ShareUtil.hasHandler(context, item.file) -> openExternally(context, item)
+            // ZIP, 7z, RAR, TAR… : extraits par l'application elle-même, sans dépendre
+            // d'un décompresseur tiers qui n'est souvent pas installé.
+            FileKinds.isArchive(item.name) -> archiveTarget = item
             isViewable(item) ->
                 openViewer(if (siblings.isEmpty()) listOf(item) else siblings, item)
             else -> openExternally(context, item)
@@ -848,39 +975,32 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
         if (error != null) openAsTarget = item
     }
 
-    /** Extrait une archive .zip à côté d'elle, dans un dossier à son nom. */
-    fun extractArchive(item: FileItem) {
+    /**
+     * Extrait une archive dans un dossier neuf à son nom, à côté d'elle ou dans
+     * [destination]. Tout le contrôle (chemins, liens, place, mémoire) est dans [Archives].
+     */
+    fun extractArchive(item: FileItem, password: CharArray? = null, destination: File? = null) {
         val source = item.file
-        val parent = source.parentFile ?: File(currentPath)
-        // Une archive nommée « .zip » donnerait un nom de dossier vide.
-        val baseName = source.nameWithoutExtension.ifBlank { "archive" }
-        runOperation("Extraction") { report ->
-            val dest = FileOperations.uniqueTarget(parent, baseName)
-            FileOperations.unzip(source, dest) { n, d, t -> report(n, d, t) }
-                .fold(
-                    {
-                        // Une archive corrompue, chiffrée ou simplement mal nommée
-                        // produit un dossier vide sans lever d'exception : sans ce
-                        // contrôle, l'application annonçait « Extrait » pour rien.
-                        val empty = dest.listFiles()?.isEmpty() ?: true
-                        if (empty) {
-                            dest.delete()
-                            message = "Archive vide, protégée par mot de passe ou illisible"
-                        } else {
-                            message = "Extrait dans « ${dest.name} »"
-                        }
-                    },
-                    {
-                        // Le dossier partiellement extrait est conservé : y toucher
-                        // pourrait détruire des fichiers déjà récupérés.
-                        val salvaged = dest.listFiles()?.isNotEmpty() ?: false
-                        if (!salvaged) dest.delete()
-                        message = if (salvaged)
-                            "Extraction interrompue : ${it.message}. Le dossier " +
-                                "« ${dest.name} » contient ce qui a pu être extrait."
-                        else "Extraction impossible : ${it.message}"
-                    }
-                )
+        val parent = destination ?: source.parentFile ?: File(currentPath)
+        runByteOperation("Extraction") { report, cancelled ->
+            try {
+                val r = Archives.extract(
+                    source, parent, password, isCancelled = cancelled,
+                    onOutputCreated = { prefs.extractionEnCours = it.absolutePath }
+                ) { n, d, t -> report(n, d, t) }
+                message = buildString {
+                    append("Extrait dans « ${r.output.name} »")
+                    append(" · ${r.files} fichier${if (r.files > 1) "s" else ""}")
+                    // Dit, sans cacher : un lien ignoré est un fichier qui manque.
+                    if (r.skipped > 0) append(" · ${r.skipped} lien(s) ignoré(s)")
+                }
+                // Extraite ailleurs : on y emmène l'utilisateur, sinon il la chercherait.
+                if (destination != null) withContext(Dispatchers.Main) { openPath(parent.absolutePath) }
+            } catch (e: Exception) {
+                message = Archives.describe(e)
+            } finally {
+                password?.fill('\u0000')
+            }
         }
     }
 
@@ -1938,6 +2058,175 @@ class FmViewModel(app: Application) : AndroidViewModel(app) {
         if (!dir.exists()) dir.mkdirs()
         if (dir.isDirectory) openPath(dir.absolutePath)
         else message = "Dossier de réception introuvable"
+    }
+
+    /**
+     * Une extraction a-t-elle été interrompue par la mort du processus ? Mise à jour de
+     * l'application en cours de route, plantage, système à court de mémoire : le code
+     * d'extraction, tué net, n'a pas pu effacer sa sortie partielle. On le fait ici.
+     *
+     * La sortie est toujours un dossier (ou un fichier) **neuf**, créé par l'extraction
+     * elle-même : la retirer ne touche à rien d'autre.
+     */
+    private fun recoverInterruptedExtraction() {
+        // ⚠️ Appelée depuis le bloc init (via refreshAccess) : ne lire ici AUCUNE propriété
+        // déclarée plus bas dans la classe — `operationRunning` l'était, et la 2.6.0 de
+        // test plantait au lancement (NullPointerException sur un State pas encore créé).
+        // Un drapeau de niveau fichier, initialisé avant la classe, borne le contrôle à
+        // une fois par processus : à ce moment, aucune extraction de CE processus ne peut
+        // tourner (il faut l'accès au stockage pour en lancer une, et ce contrôle est le
+        // premier à passer quand il est accordé). Plus tard, la sortie d'une extraction en
+        // cours ne risque donc pas d'être prise pour un reste.
+        if (extractionRecoveryDone) return
+        extractionRecoveryDone = true
+        val path = prefs.extractionEnCours ?: return
+        prefs.extractionEnCours = null
+        val partial = File(path)
+        if (!partial.exists()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { FileOperations.deleteRecursive(partial) }
+            message = "Une extraction a été interrompue (application fermée) : " +
+                "le dossier partiel « ${partial.name} » a été retiré"
+            refreshCurrentView()
+        }
+    }
+
+    /** Annulation demandée par le bouton « Annuler » (écran ou notification). */
+    @Volatile private var cancelRequested = false
+
+    /** Coût d'un fichier, en octets équivalents, pour le temps restant d'une copie. */
+    private val FILE_COST = 1L shl 20
+
+    /** Fichiers traités et à traiter, pour « 1 234 fichiers restants » ; -1 = inconnu. */
+    @Volatile private var opFilesDone = -1L
+    @Volatile private var opFilesTotal = -1L
+
+    fun cancelOperation() {
+        cancelRequested = true
+        progress = progress?.copy(title = "Annulation…", cancellable = false)
+    }
+
+    /**
+     * Opération longue mesurée en octets et annulable : l'extraction d'une archive.
+     *
+     * Elle s'accompagne d'un service de premier plan ([OperationService]) : vingt minutes
+     * d'extraction ne tiennent pas sans lui, Android figeant l'application dès que
+     * l'écran s'éteint.
+     */
+    /**
+     * Opération longue dans le service de premier plan, annulable.
+     * [items] : la progression compte des éléments (suppression) et non des octets ;
+     * un total nul signifie « inventaire en cours », `done` étant alors le nombre trouvé.
+     */
+    private fun runByteOperation(
+        title: String,
+        items: Boolean = false,
+        block: suspend (report: (String, Long, Long) -> Unit, cancelled: () -> Boolean) -> Unit
+    ) {
+        if (operationRunning) {
+            message = "Une opération est déjà en cours"
+            return
+        }
+        operationRunning = true
+        cancelRequested = false
+        opFilesDone = -1
+        opFilesTotal = -1
+        val app = getApplication<Application>()
+        OperationService.onCancel = { cancelOperation() }
+        OperationService.start(app, title)
+        viewModelScope.launch {
+            progress = OpProgress(title, indeterminate = true, cancellable = true)
+            var lastTick = 0L
+            var lastNotif = 0L
+            var speed = -1L
+            // Vitesse sur les 5 dernières secondes : assez pour lisser, assez court pour
+            // suivre le passage des gros fichiers aux petits.
+            val samples = ArrayDeque<LongArray>()
+            val lock = Any()
+            try {
+                withContext(Dispatchers.IO) {
+                    block({ name, done, total ->
+                        // Appelé par plusieurs fils d'écriture à la fois.
+                        synchronized(lock) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastTick >= 100 && !cancelRequested) {
+                                lastTick = now
+                                var eta = -1L
+                                if (!items && total > 0) {
+                                    val filesDone = opFilesDone
+                                    samples.addLast(longArrayOf(now, done, filesDone))
+                                    // On garde toujours un point d'au moins 5 s : après un blocage
+                                    // passager du support, la fenêtre ne se réduit pas à 100 ms.
+                                    while (samples.size > 2 && now - samples[1][0] >= 5000) samples.removeFirst()
+                                    val first = samples.first()
+                                    val dt = now - first[0]
+                                    if (dt >= 1000 && done < total) {
+                                        speed = (done - first[1]).coerceAtLeast(0) * 1000 / dt
+                                        // Temps restant en « unités de travail » : les octets, plus
+                                        // un forfait par fichier. Créer un fichier coûte ~45 ms quelle
+                                        // que soit sa taille ; les octets seuls annonçaient « moins
+                                        // d'une minute » avec encore mille petits fichiers à créer.
+                                        val filesTotal = opFilesTotal
+                                        val perFile = if (filesTotal > 0 && first[2] >= 0) FILE_COST else 0L
+                                        val unitsLeft = (total - done) + (filesTotal - filesDone).coerceAtLeast(0) * perFile
+                                        val unitRate = ((done - first[1]) + (filesDone - first[2]) * perFile).coerceAtLeast(0) * 1000 / dt
+                                        eta = if (unitRate > 0) unitsLeft / unitRate else -1
+                                    } else if (done >= total) speed = -1
+                                } else {
+                                    samples.clear()
+                                    speed = -1
+                                }
+                                val snapshot = if (items) OpProgress(
+                                    title,
+                                    if (total <= 0) "Inventaire : ${Formatters.count(done)} éléments" else name,
+                                    done = done.toInt(), total = total.toInt(),
+                                    indeterminate = total <= 0, cancellable = true
+                                ) else OpProgress(
+                                    title, name, indeterminate = total <= 0,
+                                    bytesDone = done, bytesTotal = total, cancellable = true,
+                                    speed = speed,
+                                    filesDone = opFilesDone, filesTotal = opFilesTotal,
+                                    etaSeconds = eta
+                                )
+                                viewModelScope.launch(Dispatchers.Main.immediate) {
+                                    if (!cancelRequested) progress = snapshot
+                                }
+                            }
+                            // La notification, elle, se contente d'une mise à jour par seconde :
+                            // Android en limite le débit et ignore le surplus.
+                            if (now - lastNotif >= 1000) {
+                                lastNotif = now
+                                val percent = if (total > 0) (done * 100 / total).toInt() else -1
+                                val text = when {
+                                    items && total > 0 -> "${Formatters.count(done)} sur ${Formatters.count(total)} éléments"
+                                    items -> "Inventaire : ${Formatters.count(done)} éléments"
+                                    total > 0 -> buildList {
+                                        add("${Formatters.size(done)} sur ${Formatters.size(total)}")
+                                        if (speed > 0) add("${Formatters.size(speed)}/s")
+                                        if (opFilesTotal > 0) add("${Formatters.count(opFilesTotal - opFilesDone)} fichier(s) restant(s)")
+                                        else add(name)
+                                    }.joinToString(" · ")
+                                    else -> name
+                                }
+                                OperationService.update(app, title, text, percent)
+                            }
+                        }
+                    }, { cancelRequested })
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                message = "$title : ${e.message ?: "échec"}"
+            } finally {
+                // Terminée, annulée ou en échec : Archives a déjà rangé derrière lui.
+                prefs.extractionEnCours = null
+                OperationService.stop(app)
+                operationRunning = false
+                progress = null
+                clearSelection()
+                refreshCurrentView()
+            }
+        }
     }
 
     private fun runOperation(

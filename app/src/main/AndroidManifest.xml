@@ -110,6 +110,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Opérations longues (extraction d'une grosse archive) : garde le processus
+             vivant et le processeur éveillé écran éteint. -->
+        <service
+            android:name=".OperationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <service
             android:name=".ShareService"
             android:exported="false"

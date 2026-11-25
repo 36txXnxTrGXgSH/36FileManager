@@ -88,6 +88,17 @@ class Prefs(context: Context) {
         get() = sp.getInt(K_VERSION_VUE, 0)
         set(v) = sp.edit().putInt(K_VERSION_VUE, v).apply()
 
+    // ---------- Extraction en cours ----------
+
+    /**
+     * Sortie d'une extraction en cours, effacée à la fin. Retrouvée au lancement, elle
+     * signale une extraction interrompue par la mort du processus : le dossier partiel
+     * est alors retiré.
+     */
+    var extractionEnCours: String?
+        get() = sp.getString(K_EXTRACTION, null)
+        set(v) = sp.edit().apply { if (v == null) remove(K_EXTRACTION) else putString(K_EXTRACTION, v) }.apply()
+
     // ---------- Partage réseau ----------
 
     var shareConfig: ShareConfig
@@ -195,6 +206,7 @@ class Prefs(context: Context) {
         const val K_FAVORITES = "favorites"
         const val K_SHARE = "share_config"
         const val K_VERSION_VUE = "derniere_version_vue"
+        const val K_EXTRACTION = "extraction_en_cours"
         /** Marque de la migration 2.3.1 : voir `migrateShareManage`. */
         const val K_SHARE_MANAGE_MIGRATED = "share_manage_migrated_v231"
         const val K_INSTALL_ID = "install_id"

@@ -104,6 +104,7 @@ fun BrowserScreen(vm: FmViewModel) {
     var deleteDialog by remember { mutableStateOf(false) }
     var movePicker by remember { mutableStateOf(false) }
     var copyPicker by remember { mutableStateOf(false) }
+    var extractPicker by remember { mutableStateOf(false) }
 
     BackHandler { vm.navigateUp() }
 
@@ -165,6 +166,19 @@ fun BrowserScreen(vm: FmViewModel) {
                 if (isMove) vm.cutSelection() else vm.copySelection()
                 vm.paste(dest)
                 movePicker = false; copyPicker = false
+            }
+        )
+    }
+
+    if (extractPicker) {
+        FolderPickerDialog(
+            title = "Extraire vers…",
+            volumes = vm.volumes,
+            startPath = vm.currentPath,
+            onDismiss = { extractPicker = false },
+            onPick = { dest ->
+                vm.extractSelection(java.io.File(dest))
+                extractPicker = false
             }
         )
     }
@@ -282,6 +296,7 @@ fun BrowserScreen(vm: FmViewModel) {
                                         onDelete = { deleteDialog = true },
                                         onMove = { movePicker = true },
                                         onCopyTo = { copyPicker = true },
+                                        onExtractTo = { extractPicker = true },
                                         close = { menuOpen = false }
                                     )
                                 }

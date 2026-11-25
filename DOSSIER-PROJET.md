@@ -4,10 +4,19 @@
 > développement sur un autre compte Claude, une autre machine ou après plusieurs mois
 > d'interruption, sans avoir accès à l'historique de la conversation d'origine.
 >
-> Dernière mise à jour : **17 septembre 2026** — version livrée **2.5.0 (versionCode 20)**.
+> Dernière mise à jour : **25 novembre 2026** — version livrée **2.6.2 (versionCode 24)**.
 >
 > ⚠️ **Depuis la 2.5.0, chaque livraison exige une entrée dans `data/Changelog.kt`** : une
 > fenêtre présente les nouveautés au premier lancement de chaque version (§ 14).
+>
+> La 2.6.2 refait **copier / déplacer** (octets, vitesse, fichiers restants, annulation) et
+> la fiche **« Informations »** (immédiate, comptage parallèle, propriétés par type) — § 9.7 quater.
+>
+> La 2.6.1 rend l'extraction et la suppression **parallèles** (mesures en § 9.7 ter).
+>
+> La 2.6.0 étend l'extraction intégrée à **7z, RAR, TAR, GZ, BZ2 et XZ** (volumes et mots
+> de passe compris), avec inventaire et contrôle de place avant de lancer, progression en
+> octets, annulation et exécution écran éteint (§ 9.7 bis).
 >
 > La 2.5.0 ajoute la **recherche dans l'arborescence** — dans l'application et dans la
 > page web, avec un seul moteur (`FileSearch`) pour les deux —, le **déplacement depuis
@@ -202,7 +211,7 @@ app/src/main/java/com/filemanager36/app/
 │  │  ├─ Common.kt              323  lignes de fichier, vignettes, barre de progression
 │  │  ├─ Dialogs.kt             730  saisie, confirmation, détails, sélecteur de dossier,
 │  │  │                              formulaire serveur, écran d'accès au stockage
-│  │  ├─ OpenDialogs.kt         349  fiche APK, archive ZIP, « Ouvrir en tant que… »
+│  │  ├─ OpenDialogs.kt              fiche APK, fenêtre d'extraction, « Ouvrir en tant que… »
 │  │  └─ SelectionActions.kt    159  actions du menu « ⋮ » sur une sélection
 │  └─ screens/
 │     ├─ HomeScreen.kt          660  accueil : volumes, coffre, favoris, catégories…
@@ -216,7 +225,7 @@ app/src/main/java/com/filemanager36/app/
 │     ├─ ShareScreen.kt         787  partage réseau : QR, code, pairs, transferts
 │     └─ ViewerScreen.kt        803  visionneuse à balayage (image, PDF, texte, remise)
 ├─ util/
-│  ├─ FileKind.kt               112  types de fichiers, icônes, couleurs, isText/isZip
+│  ├─ FileKind.kt               112  types de fichiers, icônes, couleurs, isText/isArchive
 │  ├─ ShareUtil.kt              295  types MIME, ouverture, partage, retouche
 │  ├─ ApkUtil.kt                159  lecture et installation d'un .apk
 │  ├─ Thumbnails.kt             206  miniatures maison + cache LRU 12 Mo
@@ -439,9 +448,9 @@ fun openFile(context, item, siblings = emptyList()) {
     when {
         item.isDirectory -> openPath(item.path)
         FileKinds.of(item.name, false) == FileKind.APK -> apkTarget = item
-        FileKinds.isZip(item.name) -> archiveTarget = item
         FileKinds.prefersExternalApp(item.name) &&
             ShareUtil.hasHandler(context, item.file) -> openExternally(context, item)
+        FileKinds.isArchive(item.name) -> archiveTarget = item   // 2.6.0 : tous formats
         isViewable(item) -> openViewer(if (siblings.isEmpty()) listOf(item) else siblings, item)
         else -> openExternally(context, item)
     }
@@ -569,7 +578,7 @@ catégorie. Barre supérieure escamotable d'un appui.
 | Texte | `TextPage` — `LazyColumn` ligne par ligne, chasse fixe |
 | Vidéo / audio | `MediaHandoffPage` — vignette + rangée des applications capables de lire |
 | APK | `ExternalFallback` + action « Installer l'application » |
-| ZIP | `ExternalFallback` + action « Extraire ici » |
+| Archive (ZIP, 7z, RAR, TAR…) | `ExternalFallback` + action « Extraire… », format affiché |
 | Autre | `UnsupportedPage` |
 
 ### 9.7 Ouverture des fichiers (v1.9)
@@ -578,12 +587,141 @@ catégorie. Barre supérieure escamotable d'un appui.
   installe. Nécessite `REQUEST_INSTALL_PACKAGES` **et** le réglage utilisateur
   « Installer des applications inconnues », demandé par un bouton **Autoriser** et
   revérifié sur `ON_RESUME`.
-- **ZIP** : extraction intégrée dans un dossier créé à côté. Une archive vide, chiffrée
-  ou mal nommée est signalée au lieu d'annoncer un faux succès.
+- **Archives** (refondu en 2.6.0, voir § 9.7 bis) : extraction intégrée de ZIP, 7z, RAR,
+  TAR et des flux gz/bz2/xz, dans un dossier créé à côté ou à l'endroit choisi.
 - **Texte** : visionneuse intégrée, lecture bornée à 256 Kio, 20 000 lignes maximum,
   lignes découpées à 400 caractères.
 - **Type indéterminé** : boîte « Ouvrir en tant que… » (toutes les applications, texte,
   image, vidéo, audio).
+
+### 9.7 bis Archives (v2.6.0) — `data/Archives.kt`
+Sans dépendance Android, entièrement testé en JVM (`ArchivesTest`, 17 cas).
+
+- **Bibliothèques** : commons-compress 1.28.0 (7z, TAR, gz/bz2), org.tukaani:xz 1.12
+  (LZMA/XZ), zip4j 2.11.6 (ZIP chiffrés, AES et ZipCrypto), junrar 8.1.2 (RAR jusqu'au
+  RAR5). Toutes en Java pur : aucune bibliothèque native.
+- **Détection** par octets magiques d'abord (`detect`), l'extension ensuite : un 7z
+  renommé en `.zip` s'ouvre. Un gz/bz2/xz est sondé pour savoir s'il contient un TAR.
+- **Volumes** : `.7z.NNN` via `MultiReadOnlySeekableByteChannel` ; `.partN.rar` par junrar.
+- **`summarize`** lit l'inventaire sans rien décompresser (nombre de fichiers, taille
+  extraite, mot de passe requis). La fenêtre `ArchiveActionDialog` s'en sert pour refuser
+  d'emblée une extraction qui manquerait de place, et propose « Changer… » la destination.
+- **Sécurité** : un `..` dans un chemin refuse l'archive entière, chemin canonique
+  revérifié, chaque segment passé par `SafeName`, profondeur ≤ 64, 500 000 entrées au plus ;
+  liens et fichiers spéciaux jamais créés (comptés « ignorés ») ; budget d'espace = libre −
+  max(512 Mio, 2 % du volume), vérifié avant (si la taille est annoncée) **et** pendant
+  l'écriture.
+- **Nettoyage** : annulation, manque de place, erreur de sécurité, mauvais mot de passe ou
+  rien d'extrait → la sortie neuve est retirée entièrement. Archive endommagée → les
+  fichiers complets restent, seul le fichier en cours est retiré. Processus tué en route →
+  `Prefs.extractionEnCours` désigne la sortie, retirée par `recoverInterruptedExtraction()`
+  au lancement suivant.
+- **Exécution** : `runByteOperation` dans le ViewModel, avec `OperationService` (service de
+  premier plan `dataSync`, verrou de veille partiel plafonné à 6 h, notification avec
+  « Annuler »). Progression en octets, notification mise à jour au plus une fois par seconde.
+- **Pièges consignés** :
+  - `SevenZFile.Builder.setMaxMemoryLimitKb` est interprété 1000 fois trop petit : utiliser
+    `setMaxMemoryLimitKiB` (limite = ¾ de `maxMemory`).
+  - Les entrées de `SevenZFile.getEntries()` ont `contentMethods` à null : le chiffrement
+    ne se voit qu'en avançant par `getNextEntry()`.
+  - junrar, en-têtes chiffrés sans mot de passe → `WrongPasswordException` : à traduire en
+    « mot de passe requis ».
+  - `InputStream.nullInputStream()` exige l'API 33 (minSdk 26).
+  - ZIP : noms décodés en UTF-8 ; si un U+FFFD apparaît, repli IBM850 → IBM437 →
+    windows-1252 (ZIP de l'Explorateur Windows).
+- **Visionneuse texte** : `util/TextDecoding` — BOM, UTF-8 strict, repli windows-1252,
+  caractère tronqué en fin de tampon toléré.
+- ⚠️ **Ne jamais réinstaller l'APK pendant une extraction** : `adb install -r` tue le
+  processus. C'est arrivé pendant les tests de la 2.6.0 sur une archive de 45 Gio, et c'est
+  ce qui a motivé la reprise après interruption.
+
+### 9.7 ter Vitesse sur le stockage Android (v2.6.1) — mesures et conséquences
+Mesuré sur la tablette de test (Lenovo, Android 16, 8 cœurs) avec un banc d'essai exécuté
+sur l'appareil (`app_process`), puis avec le code de l'APK lui-même :
+
+| Opération | Un à la fois | En parallèle |
+|---|---|---|
+| Créer des fichiers de 100 Kio, stockage interne | 22 /s (~45 ms chacun) | 143 /s à 4 fils ; 126 à 8 |
+| Créer des fichiers, **carte SD exFAT** (`dirsync`) | 5 /s | 7 /s à 4 fils |
+| Supprimer, stockage interne | 134 /s | 623 /s à 8 fils (448 à 4, 535 à 16) |
+| Décompresser du LZMA2 (Java pur) | ~10 Mo/s par cœur | un fil par bloc 7z |
+
+- Le coût est **par fichier**, pas par octet : chaque création ou effacement passe par FUSE
+  et le service des médias d'Android, qui met son index à jour. `.nomedia` n'y change rien.
+- **Écriture** (`Archives.Sink`) : les fichiers ≤ 1 Mio sont lus d'un bloc puis écrits par
+  4 fils ; au-delà, le décodeur écrit lui-même en flux. Au plus 48 Mio en attente
+  (sémaphore) ; l'attente se fait par tranches de 200 ms pour voir passer une annulation.
+  Les écrivains vérifient l'annulation avant chaque tâche, et `close()` la vérifie à la fin.
+- **7z** (`SevenZPlan`) : les blocs (« folders ») sont des flux indépendants. Commons
+  Compress n'expose ni leurs positions ni un décodage parallèle, et chaque `SevenZFile`
+  supplémentaire recopie l'en-tête entier (plus de 100 Mo pour 245 000 entrées : deux
+  instances dépassaient déjà le tas de 256 Mo). Les positions et décodeurs sont donc lus
+  **par réflexion**, une fois, et `Coders.addDecoder` reconstruit la chaîne de chaque bloc.
+  Toute anomalie (chiffrement, bloc à plusieurs flux, champ renommé) → `null` → chemin
+  séquentiel. `ArchivesTest` vérifie `lastSevenZParallel` : une mise à jour de la
+  bibliothèque qui casserait l'accès échoue en test au lieu de ralentir en silence.
+  Décodeurs = min(blocs, 4, cœurs/2, mémoire libre / (dictionnaire + 4 Mio)).
+- **Sommes de contrôle** : CRC32 de l'entrée, ou du **bloc** quand l'entrée n'en porte pas
+  (cas de Commons Compress pour un bloc d'un seul fichier — trouvé par le test d'altération).
+- **Ordre** (`Archives.BlockScheduler`) : **au plus un bloc de petits fichiers à la fois**
+  (moyenne < 1 Mio) — il suffit à saturer les écrivains ; les autres décodeurs avancent sur
+  les blocs de gros fichiers, limités par le processeur. Une première version alternait
+  simplement les blocs : sur l'extraction réelle, les 3 décodeurs se sont retrouvés sur des
+  petits fichiers, à attendre les mêmes écrivains, pendant que 29 Go de gros fichiers
+  restaient en file. Dossiers vides créés **après** les fichiers. Les créer d'abord mettait 43 000 créations de dossiers en tête de
+  file : sur la carte SD, 21 minutes sans un octet extrait.
+- **Carte SD** : exFAT monté en `dirsync`, recherche linéaire dans les dossiers. Rien à
+  gagner côté application ; la fenêtre d'extraction prévient au-delà de 2 000 fichiers.
+- **Suppression** (`TreeDeleter`) : inventaire parallèle (ForkJoin), puis fichiers en
+  parallèle, puis dossiers du plus profond au moins profond. Type lu en `NOFOLLOW_LINKS` :
+  un lien est effacé, sa cible jamais. Tourne dans `OperationService` (Annuler, écran
+  éteint). Dossier partiel réel de 77 024 éléments : 7 min, contre ~10 avant et sans
+  aucune progression affichée.
+- Pour mesurer : un `.dex` lancé par `CLASSPATH=essai.zip:base.apk app_process …` exécute
+  le code de l'APK installé sans passer par l'interface — utile quand l'appareil est
+  verrouillé.
+
+### 9.7 quater Copier, déplacer, « Informations » (v2.6.2)
+
+**Copier / déplacer — `data/TreeCopier.kt`.** Remplace `FileOperations.copyRecursive`
+(un fichier à la fois, progression en éléments, ni annulation ni service).
+1. Déplacement : `renameTo` d'abord — même volume = instantané, rien à copier.
+2. Inventaire parallèle (`TreeScanner`), total d'octets, **place libre vérifiée** (marge 16 Mio).
+3. Copie à 4 fils, fichiers triés par chemin, dossiers créés au fil de l'eau (cache
+   `knownDirs`), date de modification conservée, liens recréés comme liens.
+4. Déplacement : originaux effacés par `TreeDeleter` **seulement** pour un élément copié
+   sans aucune erreur (dossier illisible → élément en échec, original conservé).
+- Annulation **verrouillée** (`stopped`) : une fois vue, elle reste vraie — sans cela, le
+  retrait des copies faisait relire « pas annulé » (bug trouvé par les tests).
+- Déplacement annulé : copies retirées (cibles créées par nous seulement), originaux intacts.
+  Copie annulée : fichiers terminés gardés, fichier en cours retiré (jamais de tronqué).
+- `FileOperations.copyOrMove` reste, sans progression, pour le partage web (`HttpShareServer`).
+
+**Progression — `FmViewModel.runByteOperation`.** `OpProgress` porte `speed`, `filesDone`,
+`filesTotal`, `etaSeconds`. Vitesse sur une fenêtre de 5 s qui garde toujours un point
+d'au moins 5 s (sinon, après un blocage de la carte SD, la fenêtre tombait à 100 ms et la
+vitesse disparaissait). **Temps restant en unités de travail** : octets + 1 Mio par fichier
+(`FILE_COST`) — les octets seuls annonçaient « moins d'une minute » avec 1 000 petits
+fichiers à créer ; le maximum des deux rythmes annonçait 33 min pour 3 min réelles.
+
+Mesures (tablette, 3 Go = 3 × 1 Go + 2 000 petits fichiers) : interne → carte SD 3 min 25,
+carte SD → interne 1 min 40, données identiques (md5). Dans un dossier neuf, la carte SD
+a créé les petits fichiers à ~20–40 /s à 4 fils — bien mieux que les 5–7 /s mesurés dans
+une arborescence de 43 000 dossiers (§ 9.7 ter) : le coût croît avec la taille du dossier.
+
+**« Informations » — `data/FileDetailsReader.kt`, `data/TreeScanner.kt`.** L'ancienne
+fiche parcourait tout avec `isDirectory` + `canonicalFile` + `length` par élément, un par
+un, avant de s'ouvrir : muette plusieurs minutes sur 245 000 éléments. Désormais :
+`basic()` (immédiat), puis `TreeScanner.measure` (une lecture `readAttributes`
+NOFOLLOW par élément, 8 fils, mise à jour toutes les 150 ms) — 245 947 éléments en ~11 s ;
+`extras()` à part selon le type (BitmapFactory + ExifInterface, MediaMetadataRetriever,
+`ApkUtil.read`, `Archives.summarize`, PdfRenderer, comptage des lignes ≤ 64 Mio). Fermer
+la fiche (`closeDetails`) arrête le comptage. Sélection multiple acceptée.
+
+**« Le dossier extrait est vide » vu du PC.** Tablette branchée en MTP : l'Explorateur
+Windows garde la liste vue à l'ouverture et l'index MTP d'Android peut rater des créations
+massives (172 000 entrées indexées sur 245 000 juste après l'extraction). Les fichiers
+sont bien là : débrancher / rebrancher le câble (ou repasser en « Transfert de fichiers »).
 
 ### 9.8 Lecteurs réseau LAN (SMB/CIFS)
 Connexion en deux étapes, sans jamais avoir à connaître le nom d'un partage :
@@ -890,6 +1028,10 @@ bogue.
 | **2.3.1** | **Correction de la 2.2.0** : le renommage et la suppression, fermés par défaut, n'apparaissaient nulle part dans la page web. Réglage ouvert par défaut avec migration des installations existantes ; boutons sur la ligne à un élément coché, dans la barre du haut au-delà ; renommage en série sur une sélection ; autorisations relues à chaque listage |
 | **2.4.0** | **Dépôt depuis le PC repris de bout en bout** : file d'attente à deux envois de front (les suivants restaient à « 0 % »), envoi d'un dossier entier avec son arborescence, doublons réglés avant l'envoi (ignoré si identique, choix si différent), bouton « Relancer », processeur tenu éveillé pendant chaque requête et délai d'attente séparé pour les corps — écran éteint, les transferts tombaient en « Connexion perdue » |
 | **2.5.0** | **Recherche** dans l'arborescence, dans l'application (écran dédié, portée dossier ou téléphone, retour aux résultats) et dans la page web, avec un moteur commun testé ; **déplacement** depuis la page web ; tuile **Téléchargements** à l'accueil ; fenêtre des **nouveautés** au premier lancement de chaque version |
+| **2.5.1** | Durée des morceaux et vidéos dans la fenêtre de doublon de la page web ; correction de la sélection de la page web cassée en 2.5.0 |
+| **2.6.2** | **Copier / déplacer** avec octets, vitesse, fichiers restants, temps restant, annulation ; **« Informations »** immédiate, comptage parallèle, propriétés par type, sélection multiple (§ 9.7 quater) |
+| **2.6.1** | **Extraction et suppression parallèles** (§ 9.7 ter) ; « Extraire vers… » ; avertissement carte SD ; correction du plantage au lancement de la 2.6.0 |
+| **2.6.0** | **Extraction 7z, RAR, TAR, GZ, BZ2, XZ** en plus du ZIP, volumes multiples et mots de passe compris ; fenêtre d'inventaire avec contrôle de place et choix de la destination ; progression en octets, annulation, service de premier plan écran éteint ; nettoyage d'une extraction interrompue ; noms des ZIP Windows ; encodage de la visionneuse texte |
 
 ### Décision structurante : pas de lecteur multimédia intégré
 Un lecteur ExoPlayer (media3) avait été ajouté en v1.6 puis retiré en v1.8 après deux
@@ -1049,8 +1191,9 @@ lui-même.
   serait une régression bien réelle pour un gain hypothétique.
 - **Coffre-fort** : voir 9.3 — contenu désormais authentifié par HMAC-SHA256, avec
   compatibilité des coffres existants par `VaultEntry.format`.
-- **Extraction ZIP** (`FileOperations.unzip`) : Zip-Slip, **plus** un plafond de volume
-  produit (16 Go), un plafond d'entrées (100 000) et un contrôle de l'espace libre.
+- **Extraction d'archives** (`Archives.extract`, 2.6.0 ; auparavant `FileOperations.unzip`) :
+  Zip-Slip, plafond d'entrées (500 000) et budget d'espace libre vérifié en continu — le
+  plafond fixe de 16 Go, qui refusait des archives légitimes, est remplacé par la place réelle.
   42 Kio de zéros compressés donnent 4 Go : sans ces bornes, une archive minuscule
   remplissait le stockage jusqu'à l'échec du système.
 - **Liens symboliques** : `isSymlink()` et `MAX_DEPTH = 32` sur delete / copy / zip /
@@ -1145,6 +1288,8 @@ rattrapé **avant** d'atteindre l'appareil :
 
 | **2.5.0** | `ChangelogTest`, repris de 36Note, échouait sans défaut de logique : ses exemples utilisaient les numéros de version de 36Note (5 à 8), absents de l'historique de 36FileManager (15 à 20). Collision de signature JVM `setSearchScope` / mutateur de `searchScope` — le piège était déjà consigné en § 10 et a été retrouvé à la compilation. Dans la page web, une recherche lente recouvrait le dossier ouvert entre-temps : jeton de navigation |
 
+| **2.6.0** | ⚠️ **Limite mémoire 7z mille fois trop basse** : `setMaxMemoryLimitKb` est interprété mille fois trop petit par Commons Compress 1.28 — 384 Kio au lieu de 384 Mio, toute archive LZMA2 refusée. ⚠️ **Chiffrement 7z jamais détecté** : `getEntries()` ne remplit pas `contentMethods`. ⚠️ **Extraction tuée par une réinstallation** pendant les tests (45 Gio, 8 982 dossiers vides laissés) : d'où le témoin `extractionEnCours` et le nettoyage au lancement suivant. ⚠️ **Ce nettoyage a lui-même fait planter l'application au lancement** : appelé depuis le bloc `init` (via `refreshAccess`), il lisait `operationRunning`, déclarée 1 300 lignes plus bas et donc encore nulle — le piège d'ordre d'initialisation du § 10, une fois de plus. Remplacé par un drapeau de niveau fichier. Leçon : **après chaque `adb install`, lancer l'application (`am start -W`) et lire `logcat -b crash`** ; les tests JVM ne construisent pas le ViewModel |
+
 | **2.5.1** | ⚠️ **La sélection de la page web ne marchait plus depuis la 2.5.0** : un correctif avait inséré le compteur de résultats de recherche dans `toggle()` au lieu de `render()` — le motif visé figurait d'abord à la fin de `toggle()`. Chaque case cochée levait `ReferenceError: searching is not defined` : ligne surlignée, mais barre d'outils jamais activée. Trouvé en préparant les captures de la page de présentation ; la 2.5.0 n'avait pas été éprouvée dans un navigateur. Leçon : **toute modification de `index.html` passe par un test navigateur, sans exception**, et un patch par motif textuel doit viser un ancrage unique |
 
 **La revue avant livraison n'est pas une formalité : elle a évité une perte totale du
@@ -1204,14 +1349,23 @@ téléphone sur Internet.** La conserver dans le cycle de livraison.
 - Corbeille. **Plus utile depuis la 2.2.0** : la suppression depuis la page web est
   définitive, et c'est le seul endroit où l'on efface sans avoir l'appareil en main.
 - FTP / SFTP / WebDAV.
-- Extraction d'archives autres que ZIP (RAR, 7z) — nécessiterait une bibliothèque.
-- Annulation des opérations longues (`ProgressOverlay` n'a pas de bouton Annuler).
-- Tests JVM au-delà de `MultipartReader`, `SafeName` et `FileSearch` : les bornes de
-  `unzip` s'y prêteraient bien.
+- **Parcourir une archive sans l'extraire** et n'en extraire qu'une partie (dossier ou
+  fichiers choisis) : `summarize` lit déjà l'inventaire, il manque l'écran. Très utile sur
+  les grosses archives (45 Gio pour celle de l'utilisateur).
+- Compresser en 7z (ou ZIP chiffré AES), et pas seulement en ZIP simple.
+- Installer les APK fractionnés `.xapk` / `.apks` / `.apkm` par `PackageInstaller.Session`.
+- Copies et déplacements longs dans `OperationService` (écran éteint, annulation), comme
+  l'extraction.
+- Indexation MediaStore des fichiers extraits (photos et musique visibles dans les autres
+  applications sans attendre le balayage du système).
+- Non retenus : ISO (pas de bibliothèque Java pure maintenue), Zstandard (`.zst`, natif
+  uniquement — zstd-jni), RAR en écriture (format propriétaire).
+- Annulation des copies et suppressions longues (l'extraction l'a depuis la 2.6.0).
 
 *Fait en 2.1.0, précédemment sur cette liste : vérification d'espace disque avant
 extraction d'une grosse archive. Fait en 2.4.0 : tests JVM de `SafeName` (9 cas, dont
-toutes les formes de remontée).*
+toutes les formes de remontée). Fait en 2.6.0 : extraction 7z/RAR/TAR, annulation de
+l'extraction, tests JVM des archives.*
 
 ---
 

@@ -2,8 +2,8 @@
 
 **À lire avant de livrer toute nouvelle version.**
 
-> **Toujours valide au 17 septembre 2026, version 2.5.0 (versionCode 20).** La clé n'a pas
-> changé depuis la 1.9.1 et ne doit pas changer. Les APK 2.5.0 debug et release portent
+> **Toujours valide au 25 novembre 2026, version 2.6.2 (versionCode 24).** La clé n'a pas
+> changé depuis la 1.9.1 et ne doit pas changer. Les APK 2.6.2 debug et release portent
 > tous deux le certificat `ec15f53f…5813` : vérifié par `apksigner verify --print-certs`
 > contre l'APK de la version précédente déjà installé.
 >

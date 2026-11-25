@@ -170,10 +170,10 @@ fun ViewerOverlay(vm: FmViewModel) {
                 )
                 // Une archive atteinte au balayage propose la même extraction
                 // intégrée que dans la liste : les deux chemins restent cohérents.
-                FileKind.ARCHIVE -> if (FileKinds.isZip(item.name)) {
+                FileKind.ARCHIVE -> if (FileKinds.isArchive(item.name)) {
                     ExternalFallback(
                         item = item,
-                        title = "Archive ZIP",
+                        title = "Archive " + (com.filemanager36.app.data.Archives.formatFromName(item.name)?.label ?: ""),
                         detail = "L'application peut extraire cette archive sur place.",
                         onOpen = { ShareUtil.open(context, item.file) },
                         onTap = { chromeVisible = !chromeVisible },
@@ -604,9 +604,9 @@ private fun TextPage(item: FileItem, onTap: () -> Unit) {
                     }
                     got
                 }
-                // Une coupure au milieu d'un caractère multi-octets ne produit qu'un
-                // caractère de remplacement en fin de texte, sans exception.
-                val text = String(buf, 0, read, Charsets.UTF_8)
+                // UTF-8, UTF-16 ou Windows-1252 : un sous-titre .srt écrit sous Windows
+                // affichait sinon « � » à la place de chaque accent.
+                val text = com.filemanager36.app.util.TextDecoding.decode(buf, read, truncated = size > read).text
                 // Découpage des lignes trop longues : un JSON minifié ou un .min.js
                 // tient sur une seule ligne de 260 000 caractères, que Compose met
                 // plusieurs secondes à mettre en page — et dont la hauteur dépasse la

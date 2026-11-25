@@ -34,6 +34,114 @@ object Changelog {
     /** De la plus récente à la plus ancienne : c'est l'ordre d'affichage. */
     val versions: List<VersionNote> = listOf(
         VersionNote(
+            code = 24,
+            nom = "2.6.2",
+            date = "25 novembre 2026",
+            lignes = listOf(
+                LigneNote(
+                    GenreNote.NOUVEAU,
+                    "Copier et déplacer affichent une vraie barre de progression : la quantité " +
+                        "copiée, la vitesse, le nombre de fichiers restants et le temps restant. " +
+                        "Bouton Annuler, et l'opération continue écran éteint."
+                ),
+                LigneNote(
+                    GenreNote.AMELIORE,
+                    "Copie et déplacement de nombreux petits fichiers plusieurs fois plus rapides " +
+                        "(quatre fichiers à la fois), et la place libre est vérifiée avant de commencer."
+                ),
+                LigneNote(
+                    GenreNote.AMELIORE,
+                    "Un déplacement annulé ne laisse rien derrière lui : les copies déjà faites sont " +
+                        "retirées et les originaux n'ont pas bougé."
+                ),
+                LigneNote(
+                    GenreNote.CORRIGE,
+                    "« Informations » sur un gros dossier ne restait plus muet : la fiche s'ouvre " +
+                        "aussitôt et compte fichiers, dossiers et taille en direct."
+                ),
+                LigneNote(
+                    GenreNote.NOUVEAU,
+                    "« Informations » décrit chaque type de fichier : dimensions et appareil d'une " +
+                        "photo, durée et résolution d'une vidéo, titre et artiste d'une musique, version " +
+                        "d'un APK, contenu d'une archive, pages d'un PDF, lignes d'un texte. Elle " +
+                        "fonctionne aussi sur plusieurs éléments sélectionnés à la fois."
+                )
+            )
+        ),
+        VersionNote(
+            code = 23,
+            nom = "2.6.1",
+            date = "25 novembre 2026",
+            lignes = listOf(
+                LigneNote(
+                    GenreNote.AMELIORE,
+                    "Extraction bien plus rapide : plusieurs fichiers sont écrits à la fois, et " +
+                        "les archives 7z sont décompressées sur plusieurs cœurs. Sur une archive de " +
+                        "200 000 fichiers, plusieurs heures deviennent une demi-heure environ."
+                ),
+                LigneNote(
+                    GenreNote.AMELIORE,
+                    "Suppression des gros dossiers plusieurs fois plus rapide, avec le nombre " +
+                        "d'éléments supprimés, un bouton Annuler, et qui continue écran éteint."
+                ),
+                LigneNote(
+                    GenreNote.NOUVEAU,
+                    "« Extraire vers… » dans le menu de sélection, pour choisir où extraire une " +
+                        "archive — une carte SD par exemple."
+                ),
+                LigneNote(
+                    GenreNote.NOUVEAU,
+                    "La fenêtre d'extraction prévient quand la destination est une carte SD : " +
+                        "Android y crée les fichiers très lentement, une archive de milliers de " +
+                        "fichiers y prend des heures. Le stockage interne est bien plus rapide."
+                ),
+                LigneNote(
+                    GenreNote.CORRIGE,
+                    "L'application ne se lançait plus après l'installation de la 2.6.0."
+                )
+            )
+        ),
+        VersionNote(
+            code = 22,
+            nom = "2.6.0",
+            date = "25 novembre 2026",
+            lignes = listOf(
+                LigneNote(
+                    GenreNote.NOUVEAU,
+                    "Extraction des archives 7z, RAR (jusqu'au RAR 5), TAR, TAR.GZ, TAR.BZ2, TAR.XZ, " +
+                        "GZ, BZ2 et XZ, en plus du ZIP — y compris les archives découpées en " +
+                        "plusieurs parties (.7z.001, .part1.rar)."
+                ),
+                LigneNote(
+                    GenreNote.NOUVEAU,
+                    "Archives protégées par mot de passe (ZIP, 7z, RAR) : le mot de passe est " +
+                        "demandé et vérifié avant de commencer."
+                ),
+                LigneNote(
+                    GenreNote.NOUVEAU,
+                    "Avant d'extraire, la fenêtre indique le nombre de fichiers, la place " +
+                        "nécessaire et la place disponible ; on peut choisir un autre emplacement, " +
+                        "une carte SD par exemple."
+                ),
+                LigneNote(
+                    GenreNote.AMELIORE,
+                    "Une extraction se suit en mégaoctets, s'annule d'un bouton, et continue " +
+                        "écran éteint, avec sa progression dans les notifications."
+                ),
+                LigneNote(
+                    GenreNote.CORRIGE,
+                    "Les archives ZIP créées sous Windows avec des accents dans les noms " +
+                        "s'extraient correctement, et les archives de plus de 16 Go ne sont plus " +
+                        "refusées."
+                ),
+                LigneNote(
+                    GenreNote.CORRIGE,
+                    "Visionneuse texte : les fichiers écrits sous Windows (sous-titres .srt, " +
+                        "vieux .txt) affichent de nouveau leurs accents au lieu de « � »."
+                )
+            )
+        ),
+        VersionNote(
             code = 21,
             nom = "2.5.1",
             date = "21 octobre 2026",

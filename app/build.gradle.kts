@@ -15,8 +15,8 @@ android {
         applicationId = "com.filemanager36.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "2.5.1"
+        versionCode = 24
+        versionName = "2.6.2"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -147,7 +147,8 @@ dependencies {
 
     // Accès aux lecteurs réseau LAN (SMB / CIFS)
     implementation("com.hierynomus:smbj:0.13.0")
-    implementation("org.slf4j:slf4j-nop:1.7.36")
+    // 2.0.x : junrar tire slf4j-api 2, qui ne reconnaît plus les liaisons 1.7.
+    implementation("org.slf4j:slf4j-nop:2.0.17")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     // Énumération des partages d'un serveur (MS-SRVS / NetrShareEnum sur le tube IPC$).
     // bcprov-jdk15on est exclu : mêmes classes que bcprov-jdk18on, sinon dex refuse.
@@ -158,6 +159,15 @@ dependencies {
     // QR code du partage réseau. « core » est du Java pur, sans dépendance AWT ni
     // Android : c'est le module qu'utilise zxing-android-embedded sous le capot.
     implementation("com.google.zxing:core:3.5.3")
+
+    // Archives (2.6.0). Pur Java, sans bibliothèque native : 7z, tar, gz, bz2, xz
+    // par Commons Compress ; LZMA/LZMA2 (le cœur du 7z et du .xz) par XZ for Java ;
+    // ZIP par zip4j, qui sait ce que java.util.zip ignore — mots de passe (ZipCrypto
+    // et AES) et noms de fichiers en page de code Windows ; RAR 4 à 7 par junrar.
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.12")
+    implementation("net.lingala.zip4j:zip4j:2.11.6")
+    implementation("com.github.junrar:junrar:8.1.2")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 

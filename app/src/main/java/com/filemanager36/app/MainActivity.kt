@@ -131,7 +131,7 @@ private fun AppRoot() {
             if (vm.viewerOpen) ViewerOverlay(vm)
 
             vm.detailsTarget?.let { details ->
-                DetailsDialog(details) { vm.detailsTarget = null }
+                DetailsDialog(details) { vm.closeDetails() }
             }
 
             // Fichiers à traitement particulier : APK (installation), archive ZIP
@@ -147,7 +147,8 @@ private fun AppRoot() {
             vm.archiveTarget?.let { item ->
                 ArchiveActionDialog(
                     item = item,
-                    onExtract = { vm.extractArchive(item) },
+                    volumes = vm.volumes,
+                    onExtract = { password, destination -> vm.extractArchive(item, password, destination) },
                     onMessage = { vm.message = it },
                     onDismiss = { vm.archiveTarget = null }
                 )
@@ -165,7 +166,7 @@ private fun AppRoot() {
             // affiché, y compris par-dessus la visionneuse.
             ShareOfferDialog(vm)
 
-            vm.progress?.let { ProgressOverlay(it) }
+            vm.progress?.let { ProgressOverlay(it, onCancel = if (it.cancellable) vm::cancelOperation else null) }
 
             // Par-dessus tout le reste, une seule fois : fermer enregistre la version.
             if (nouveautes.isNotEmpty() && !nouveautesVues) {

@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.filemanager36.app.data.Archives
 import com.filemanager36.app.ui.FmViewModel
 
 /**
@@ -43,12 +44,16 @@ fun SelectionActionItems(
     onMove: () -> Unit,
     onCopyTo: () -> Unit,
     close: () -> Unit,
+    /** « Extraire vers… » : choisir où extraire les archives sélectionnées. */
+    onExtractTo: () -> Unit = {},
     // Faux dans les catégories (Images, Vidéos, Documents) : il n'y a pas de dossier
     // courant, donc « coller ici », « compresser » et « extraire ici » n'ont pas de sens.
     folderContext: Boolean = true
 ) {
     val context = LocalContext.current
     val single = vm.selected.size == 1
+    // Les entrées d'extraction ne s'affichent que si la sélection contient une archive.
+    val hasArchive = vm.selected.any { Archives.isArchiveName(it.substringAfterLast('/')) }
 
     Text(
         "${vm.selected.size} élément(s) sélectionné(s)",
@@ -104,10 +109,19 @@ fun SelectionActionItems(
             leadingIcon = { Icon(Icons.Filled.FolderZip, null) },
             onClick = { onCompress(); close() }
         )
+        if (hasArchive) {
+            DropdownMenuItem(
+                text = { Text("Extraire ici") },
+                leadingIcon = { Icon(Icons.Filled.Unarchive, null) },
+                onClick = { vm.extractSelection(); close() }
+            )
+        }
+    }
+    if (hasArchive) {
         DropdownMenuItem(
-            text = { Text("Extraire ici") },
+            text = { Text("Extraire vers…") },
             leadingIcon = { Icon(Icons.Filled.Unarchive, null) },
-            onClick = { vm.extractSelection(); close() }
+            onClick = { onExtractTo(); close() }
         )
     }
     DropdownMenuItem(
@@ -148,8 +162,9 @@ fun SelectionActionItems(
     DropdownMenuItem(
         text = { Text("Informations") },
         leadingIcon = { Icon(Icons.Filled.Info, null) },
-        enabled = single,
-        onClick = { vm.selected.firstOrNull()?.let { vm.showDetails(it) }; close() }
+        // Plusieurs éléments : la fiche donne le total (taille, fichiers, dossiers).
+        enabled = vm.selected.isNotEmpty(),
+        onClick = { vm.showDetails(vm.selected.toList()); close() }
     )
     DropdownMenuItem(
         text = { Text("Annuler la sélection") },
